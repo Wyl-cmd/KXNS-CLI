@@ -1,0 +1,26 @@
+version: 1
+agent:
+  name: ""
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kxns_cli.tools.multiagent:Task"
+    - "kxns_cli.tools.think:Think"
+    - "kxns_cli.tools.ask_user:AskUserQuestion"
+    - "kxns_cli.tools.todo:SetTodoList"
+    - "kxns_cli.tools.shell:Shell"
+    - "kxns_cli.tools.file:ReadFile"
+    - "kxns_cli.tools.file:ReadMediaFile"
+    - "kxns_cli.tools.file:Glob"
+    - "kxns_cli.tools.file:Grep"
+    - "kxns_cli.tools.file:WriteFile"
+    - "kxns_cli.tools.file:StrReplaceFile"
+    - "kxns_cli.tools.web:SearchWeb"
+    - "kxns_cli.tools.web:FetchURL"
+    - "kxns_cli.tools.plan:ExitPlanMode"
+    - "kxns_cli.tools.plan.enter:EnterPlanMode"
+  subagents:
+    coder:
+      path: ./sub.yaml
+      description: "Good at general software engineering tasks."

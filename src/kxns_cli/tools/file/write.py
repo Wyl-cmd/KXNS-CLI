@@ -1,0 +1,171 @@
+from collections.abc import Callable
+from pathlib import Path
+from typing import Literal, override
+
+from kaos.path import KaosPath
+from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from pydantic import BaseModel, Field
+
+from kxns_cli.soul.agent import Runtime
+from kxns_cli.soul.approval import Approval
+from kxns_cli.tools.display import DisplayBlock
+from kxns_cli.tools.file import FileActions
+from kxns_cli.tools.utils import ToolRejectedError, load_desc
+from kxns_cli.utils.diff import build_diff_blocks
+from kxns_cli.utils.path import is_within_workspace
+
+
+class Params(BaseModel):
+    path: str = Field(
+        description=(
+            "The path to the file to write. Absolute paths are required when writing files "
+            "outside the working directory."
+        )
+    )
+    content: str = Field(description="The content to write to the file")
+    mode: Literal["overwrite", "append"] = Field(
+        description=(
+            "The mode to use to write to the file. "
+            "Two modes are supported: `overwrite` for overwriting the whole file and "
+            "`append` for appending to the end of an existing file."
+        ),
+        default="overwrite",
+    )
+
+
+class WriteFile(CallableTool2[Params]):
+    name: str = "WriteFile"
+    description: str = load_desc(Path(__file__).parent / "write.md")
+    params: type[Params] = Params
+
+    def __init__(self, runtime: Runtime, approval: Approval):
+        super().__init__()
+        self._work_dir = runtime.builtin_args.KXNS_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+        self._approval = approval
+        self._plan_mode_checker: Callable[[], bool] | None = None
+        self._plan_file_path_getter: Callable[[], Path | None] | None = None
+
+    def bind_plan_mode(
+        self, checker: Callable[[], bool], path_getter: Callable[[], Path | None]
+    ) -> None:
+        self._plan_mode_checker = checker
+        self._plan_file_path_getter = path_getter
+
+    async def _validate_path(self, path: KaosPath) -> ToolError | None:
+        resolved_path = path.canonical()
+
+        if (
+            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
+            and not path.is_absolute()
+        ):
+            return ToolError(
+                message=(
+                    f"`{path}` is not an absolute path. "
+                    "You must provide an absolute path to write a file "
+                    "outside the working directory."
+                ),
+                brief="Invalid path",
+            )
+        return None
+
+    @override
+    async def __call__(self, params: Params) -> ToolReturnValue:
+        if not params.path:
+            return ToolError(
+                message="File path cannot be empty.",
+                brief="Empty file path",
+            )
+
+        try:
+            p = KaosPath(params.path).expanduser()
+
+            if err := await self._validate_path(p):
+                return err
+            p = p.canonical()
+
+            if not await p.parent.exists():
+                return ToolError(
+                    message=f"`{params.path}` parent directory does not exist.",
+                    brief="Parent directory not found",
+                )
+
+            if params.mode not in ["overwrite", "append"]:
+                return ToolError(
+                    message=(
+                        f"Invalid write mode: `{params.mode}`. "
+                        "Mode must be either `overwrite` or `append`."
+                    ),
+                    brief="Invalid write mode",
+                )
+
+            is_plan_file_write = False
+            if self._plan_mode_checker and self._plan_mode_checker():
+                plan_path = self._plan_file_path_getter() if self._plan_file_path_getter else None
+                if plan_path is not None:
+                    try:
+                        resolved_plan = plan_path.resolve()
+                        resolved_p = Path(str(p)).resolve()
+                        is_plan_file_write = resolved_p == resolved_plan
+                    except Exception:
+                        is_plan_file_write = str(p) == str(plan_path.resolve())
+                if is_plan_file_write:
+                    plan_path.parent.mkdir(parents=True, exist_ok=True)
+                else:
+                    path_hint = str(plan_path) if plan_path else "plan file"
+                    return ToolError(
+                        message=f"Cannot write files in plan mode. Only the plan file can be written. Plan file path: {path_hint}",
+                        brief="Plan mode restriction",
+                    )
+
+            file_existed = await p.exists()
+            old_text = None
+            if file_existed:
+                old_text = await p.read_text(errors="replace")
+
+            new_text = (
+                params.content if params.mode == "overwrite" else (old_text or "") + params.content
+            )
+            diff_blocks: list[DisplayBlock] = list(
+                build_diff_blocks(
+                    str(p),
+                    old_text or "",
+                    new_text,
+                )
+            )
+
+            action = (
+                FileActions.EDIT
+                if is_within_workspace(p, self._work_dir, self._additional_dirs)
+                else FileActions.EDIT_OUTSIDE
+            )
+
+            if not is_plan_file_write:
+                if not await self._approval.request(
+                    self.name,
+                    action,
+                    f"Write file `{p}`",
+                    display=diff_blocks,
+                ):
+                    return ToolRejectedError()
+
+            match params.mode:
+                case "overwrite":
+                    await p.write_text(params.content)
+                case "append":
+                    await p.append_text(params.content)
+
+            file_size = (await p.stat()).st_size
+            action = "overwritten" if params.mode == "overwrite" else "appended to"
+            return ToolReturnValue(
+                is_error=False,
+                output="",
+                message=(f"File successfully {action}. Current size: {file_size} bytes."),
+                display=diff_blocks,
+            )
+
+        except Exception as e:
+            return ToolError(
+                message=f"Failed to write to {params.path}. Error: {e}",
+                brief="Failed to write file",
+            )
