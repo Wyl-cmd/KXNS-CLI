@@ -56,7 +56,7 @@ rm -rf "$SCRIPT_DIR/build"
 
 # Build executable
 echo -e "${CYAN}[3/3] Building executable...${NC}"
-SPEC_FILE="$SCRIPT_DIR/kxns-cli.spec"
+SPEC_FILE="$SCRIPT_DIR/kxns.spec"
 if [ -f "$SPEC_FILE" ]; then
     $PYTHON -m PyInstaller "$SPEC_FILE" --distpath "$DIST_DIR" --workpath "$SCRIPT_DIR/build" --clean
 else

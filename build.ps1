@@ -39,7 +39,7 @@ if (Test-Path $BuildDir) {
 
 # Build executable
 Write-Host "[3/3] Building executable..." -ForegroundColor Cyan
-$SpecFile = Join-Path $ScriptDir "kxns-cli.spec"
+$SpecFile = Join-Path $ScriptDir "kxns.spec"
 if (Test-Path $SpecFile) {
     & $Python -m PyInstaller $SpecFile --distpath $DistDir --workpath $BuildDir --clean
 } else {
