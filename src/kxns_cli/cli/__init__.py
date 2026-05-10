@@ -44,9 +44,7 @@ UIMode = Literal["shell", "print", "wire"]
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
 
-DEFAULT_API_URL = "https://apis.iflow.cn/v1"
-DEFAULT_API_KEY = "sk-af4131e6494de4a9c76b3f50eb963dd8"
-DEFAULT_MODEL = "qwen3-coder-plus"
+
 
 
 def _version_callback(value: bool) -> None:
@@ -134,7 +132,7 @@ def kxns(
         str | None,
         typer.Option(
             "--api-url",
-            help="LLM API base URL. Default: https://apis.iflow.cn/v1",
+            help="LLM API base URL.",
         ),
     ] = None,
     api_key: Annotated[
@@ -148,7 +146,7 @@ def kxns(
         str | None,
         typer.Option(
             "--api-model",
-            help="LLM model name. Default: qwen3-coder-plus",
+            help="LLM model name.",
         ),
     ] = None,
     max_context_size: Annotated[
@@ -395,10 +393,13 @@ def kxns(
     del version
 
     if api_url or api_key or api_model:
-        url = api_url or DEFAULT_API_URL
-        key = api_key or DEFAULT_API_KEY
-        model = api_model or DEFAULT_MODEL
-        _save_api_config(url, key, model, max_context_size, None, False)
+        if not api_url:
+            raise typer.BadParameter("API URL is required. Use --api-url to specify.", param_hint="--api-url")
+        if not api_key:
+            raise typer.BadParameter("API key is required. Use --api-key to specify.", param_hint="--api-key")
+        if not api_model:
+            raise typer.BadParameter("Model name is required. Use --api-model to specify.", param_hint="--api-model")
+        _save_api_config(api_url, api_key, api_model, max_context_size, None, False)
         raise typer.Exit()
 
     from kaos.path import KaosPath

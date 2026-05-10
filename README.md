@@ -119,7 +119,7 @@ kxns api https://api.anthropic.com/v1 sk-your-api-key claude-3-5-sonnet -t
 kxns api https://api.openai.com/v1 sk-your-api-key gpt-4-vision -x 200000 -i -t
 
 # 自定义 API 提供商
-kxns api https://apis.iflow.cn/v1 sk-your-api-key qwen3-coder-plus -x 128000
+kxns api https://api.example.com/v1 sk-your-api-key your-model -x 128000
 ```
 
 ### 配置文件
