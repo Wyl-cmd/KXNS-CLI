@@ -130,18 +130,17 @@ kxns api https://api.example.com/v1 sk-your-api-key your-model -x 128000
 # KXNS Hunter CLI 配置
 # 由 kxns api 命令生成
 
-default_model = "qwen3-coder-plus"
-default_thinking = true  # 仅在启用 -t 时生效
+default_model = "your-model"
 
-[models.qwen3-coder-plus]
+[models.your-model]
 provider = "custom"
-model = "qwen3-coder-plus"
+model = "your-model"
 max_context_size = 128000
-capabilities = ["image_in", "thinking"]  # 仅在启用 -i/-t 时生效
+capabilities = ["image_in", "thinking"]
 
 [providers.custom]
 type = "openai_legacy"
-base_url = "https://apis.iflow.cn/v1"
+base_url = "https://api.example.com/v1"
 api_key = "sk-your-api-key"
 ```
 

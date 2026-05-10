@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-hiddenimports = collect_submodules("kxns_cli.tools") + ["setproctitle"]
+hiddenimports = (
+    collect_submodules("kxns_cli")
+    + collect_submodules("kosong")
+    + collect_submodules("kaos")
+    + collect_submodules("pykaos")
+    + ["setproctitle"]
+)
 datas = (
     collect_data_files(
         "kxns_cli",
@@ -27,5 +33,9 @@ datas = (
     + collect_data_files(
         "fastmcp",
         includes=["../fastmcp-*.dist-info/*"],
+    )
+    + collect_data_files(
+        "kxns_cli",
+        includes=["../kxns_cli-*.dist-info/*"],
     )
 )
