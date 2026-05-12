@@ -761,6 +761,7 @@ async def _keyboard_listener(
 class _LiveView:
     def __init__(self, initial_status: StatusUpdate, cancel_event: asyncio.Event | None = None):
         self._cancel_event = cancel_event
+        self._live: Live | None = None
 
         self._mooning_spinner: Spinner | None = None
         self._compacting_spinner: Spinner | None = None
@@ -796,6 +797,7 @@ class _LiveView:
             transient=True,
             vertical_overflow="visible",
         ) as live:
+            self._live = live
 
             async def keyboard_handler(listener: KeyboardListener, event: KeyEvent) -> None:
                 # Handle Ctrl+E specially - pause Live while the pager is active
@@ -1084,8 +1086,12 @@ class _LiveView:
     def flush_content(self) -> None:
         """Flush the current content block."""
         if self._current_content_block is not None:
+            if self._live is not None:
+                self._live.stop()
             console.print(self._current_content_block.compose_final())
             self._current_content_block = None
+            if self._live is not None:
+                self._live.start()
             self.refresh_soon()
 
     def flush_finished_tool_calls(self) -> None:
@@ -1097,7 +1103,11 @@ class _LiveView:
                 break
 
             self._tool_call_blocks.pop(tool_call_id)
+            if self._live is not None:
+                self._live.stop()
             console.print(block.compose())
+            if self._live is not None:
+                self._live.start()
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
             self.refresh_soon()
