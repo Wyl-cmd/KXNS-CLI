@@ -1091,25 +1091,31 @@ class _LiveView:
             console.print(self._current_content_block.compose_final())
             self._current_content_block = None
             if self._live is not None:
+                self._reset_live_shape(self._live)
                 self._live.start()
+                self._live.update(self.compose(), refresh=True)
             self.refresh_soon()
 
     def flush_finished_tool_calls(self) -> None:
         """Flush all leading finished tool call blocks."""
         tool_call_ids = list(self._tool_call_blocks.keys())
+        live_was_stopped = False
         for tool_call_id in tool_call_ids:
             block = self._tool_call_blocks[tool_call_id]
             if not block.finished:
                 break
 
             self._tool_call_blocks.pop(tool_call_id)
-            if self._live is not None:
+            if self._live is not None and not live_was_stopped:
                 self._live.stop()
+                live_was_stopped = True
             console.print(block.compose())
-            if self._live is not None:
-                self._live.start()
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
+        if live_was_stopped:
+            self._reset_live_shape(self._live)
+            self._live.start()
+            self._live.update(self.compose(), refresh=True)
             self.refresh_soon()
 
     def append_content(self, part: ContentPart) -> None:
