@@ -761,7 +761,6 @@ async def _keyboard_listener(
 class _LiveView:
     def __init__(self, initial_status: StatusUpdate, cancel_event: asyncio.Event | None = None):
         self._cancel_event = cancel_event
-        self._live: Live | None = None
 
         self._mooning_spinner: Spinner | None = None
         self._compacting_spinner: Spinner | None = None
@@ -797,7 +796,6 @@ class _LiveView:
             transient=True,
             vertical_overflow="visible",
         ) as live:
-            self._live = live
 
             async def keyboard_handler(listener: KeyboardListener, event: KeyEvent) -> None:
                 # Handle Ctrl+E specially - pause Live while the pager is active
@@ -1086,36 +1084,22 @@ class _LiveView:
     def flush_content(self) -> None:
         """Flush the current content block."""
         if self._current_content_block is not None:
-            if self._live is not None:
-                self._live.stop()
             console.print(self._current_content_block.compose_final())
             self._current_content_block = None
-            if self._live is not None:
-                self._reset_live_shape(self._live)
-                self._live.start()
-                self._live.update(self.compose(), refresh=True)
             self.refresh_soon()
 
     def flush_finished_tool_calls(self) -> None:
         """Flush all leading finished tool call blocks."""
         tool_call_ids = list(self._tool_call_blocks.keys())
-        live_was_stopped = False
         for tool_call_id in tool_call_ids:
             block = self._tool_call_blocks[tool_call_id]
             if not block.finished:
                 break
 
             self._tool_call_blocks.pop(tool_call_id)
-            if self._live is not None and not live_was_stopped:
-                self._live.stop()
-                live_was_stopped = True
             console.print(block.compose())
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
-        if live_was_stopped:
-            self._reset_live_shape(self._live)
-            self._live.start()
-            self._live.update(self.compose(), refresh=True)
             self.refresh_soon()
 
     def append_content(self, part: ContentPart) -> None:
