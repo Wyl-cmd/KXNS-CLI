@@ -1957,7 +1957,12 @@ export function useSessionStream(
           console.log(
             "[SessionStream] History loaded, waiting for environment...",
           );
-          isReplayingRef.current = false;
+          // NOTE: Do NOT set isReplayingRef.current = false here.
+          // The server still needs to flush buffered live messages (end_replay)
+          // and start the worker. Those buffered messages may contain events
+          // like CompactionEnd that should still be treated as replay.
+          // isReplayingRef will be set to false when session_status arrives.
+
           // Keep status as "submitted" - input stays disabled until session_status
           setStatus((current) => (current === "ready" ? current : "submitted"));
 
