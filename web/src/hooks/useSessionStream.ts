@@ -1667,8 +1667,7 @@ export function useSessionStream(
             });
           }
 
-          // Clear UI for /clear command (triggered by StatusUpdate after clear)
-          if (pendingClearRef.current) {
+          if (!isReplay && pendingClearRef.current) {
             pendingClearRef.current = false;
             setMessages((prev) => {
               let lastUserMsgIndex = -1;
@@ -1780,37 +1779,39 @@ export function useSessionStream(
         }
 
         case "CompactionBegin": {
-          const compactionMsgId = getNextMessageId("assistant");
-          compactionMessageIdRef.current = compactionMsgId;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: compactionMsgId,
-              role: "assistant",
-              variant: "status",
-              content: "Compacting conversation history…",
-              isStreaming: true,
-            },
-          ]);
+          if (!isReplay) {
+            const compactionMsgId = getNextMessageId("assistant");
+            compactionMessageIdRef.current = compactionMsgId;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: compactionMsgId,
+                role: "assistant",
+                variant: "status",
+                content: "Compacting conversation history…",
+                isStreaming: true,
+              },
+            ]);
+          }
           break;
         }
 
         case "CompactionEnd": {
-          const compactMsgId = compactionMessageIdRef.current;
-          compactionMessageIdRef.current = null;
-          // Clear old messages after compaction, only keep the current turn
-          // Also remove the compaction indicator message
-          setMessages((prev) => {
-            let lastUserMsgIndex = -1;
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].role === "user") {
-                lastUserMsgIndex = i;
-                break;
+          if (!isReplay) {
+            const compactMsgId = compactionMessageIdRef.current;
+            compactionMessageIdRef.current = null;
+            setMessages((prev) => {
+              let lastUserMsgIndex = -1;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].role === "user") {
+                  lastUserMsgIndex = i;
+                  break;
+                }
               }
-            }
-            const kept = lastUserMsgIndex >= 0 ? prev.slice(lastUserMsgIndex) : [];
-            return compactMsgId ? kept.filter((m) => m.id !== compactMsgId) : kept;
-          });
+              const kept = lastUserMsgIndex >= 0 ? prev.slice(lastUserMsgIndex) : [];
+              return compactMsgId ? kept.filter((m) => m.id !== compactMsgId) : kept;
+            });
+          }
           break;
         }
 
