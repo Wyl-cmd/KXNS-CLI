@@ -7,6 +7,7 @@ The stdout and stderr streams are combined and returned as a single string. Extr
 
 **Guidelines for safety and security:**
 - Every tool call starts a fresh ${SHELL} session. Environment variables, `cd` changes, and command history do not persist between calls.
+- **IMPORTANT: Do NOT use `cd` alone.** Since each call starts a fresh shell, a standalone `cd` has no effect — the directory change is lost when the call ends. Always chain `cd` with the actual command using `;`, e.g. `cd C:\path; Get-ChildItem`. Using `cd` by itself is a waste of a tool call and will cause subsequent commands to run in the wrong directory.
 - Do not launch interactive programs or anything that is expected to block indefinitely; ensure each command finishes promptly. Provide a `timeout` argument for potentially long runs.
 - Avoid using `..` to leave the working directory, and never touch files outside that directory unless explicitly instructed.
 - Never attempt commands that require elevated (Administrator) privileges unless explicitly authorized.
