@@ -98,6 +98,7 @@ def create_llm(
     thinking: bool | None = None,
     session_id: str | None = None,
     oauth: OAuthManager | None = None,
+    request_timeout: float | None = None,
 ) -> LLM | None:
     if provider.type not in {"_echo", "_scripted_echo"} and (
         not provider.base_url or not model.model
@@ -109,6 +110,9 @@ def create_llm(
         if oauth and provider.oauth
         else provider.api_key.get_secret_value()
     )
+    client_kwargs: dict[str, object] = {}
+    if request_timeout is not None:
+        client_kwargs["timeout"] = request_timeout
 
     match provider.type:
         case "openai_legacy":
@@ -116,9 +120,11 @@ def create_llm(
 
             reasoning_key = provider.reasoning_key
             if not reasoning_key:
-                if "deepseek" in model.model.lower():
-                    reasoning_key = "reasoning_content"
-                elif model.capabilities and "thinking" in (model.capabilities or set()):
+                if (
+                    "deepseek" in model.model.lower()
+                    or model.capabilities
+                    and "thinking" in (model.capabilities or set())
+                ):
                     reasoning_key = "reasoning_content"
 
             chat_provider = OpenAILegacy(
@@ -126,6 +132,7 @@ def create_llm(
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
                 reasoning_key=reasoning_key,
+                **client_kwargs,
             )
         case "openai_responses":
             from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
@@ -134,6 +141,7 @@ def create_llm(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
+                **client_kwargs,
             )
         case "anthropic":
             from kosong.contrib.chat_provider.anthropic import Anthropic
@@ -144,6 +152,7 @@ def create_llm(
                 api_key=resolved_api_key,
                 default_max_tokens=50000,
                 metadata={"user_id": session_id} if session_id else None,
+                **client_kwargs,
             )
         case "google_genai" | "gemini":
             from kosong.contrib.chat_provider.google_genai import GoogleGenAI
@@ -152,6 +161,7 @@ def create_llm(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
+                **client_kwargs,
             )
         case "vertexai":
             from kosong.contrib.chat_provider.google_genai import GoogleGenAI
@@ -162,6 +172,7 @@ def create_llm(
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
                 vertexai=True,
+                **client_kwargs,
             )
         case "_echo":
             from kosong.chat_provider.echo import EchoChatProvider
@@ -185,6 +196,7 @@ def create_llm(
                     model=model.model,
                     base_url=provider.base_url,
                     api_key=resolved_api_key,
+                    **client_kwargs,
                 ),
                 chaos_config=ChaosConfig(
                     error_probability=0.8,

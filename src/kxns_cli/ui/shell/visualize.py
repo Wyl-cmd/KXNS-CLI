@@ -37,9 +37,15 @@ from kxns_cli.wire.types import (
     CompactionEnd,
     ContentPart,
     DiffDisplayBlock,
+    FindingDiscovered,
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionRequest,
+    ScanBegin,
+    ScanEnd,
+    ScanJobBegin,
+    ScanJobEnd,
+    ScanRunning,
     ShellDisplayBlock,
     StatusUpdate,
     StepBegin,
@@ -765,6 +771,7 @@ class _LiveView:
         self._mooning_spinner: Spinner | None = None
         self._compacting_spinner: Spinner | None = None
         self._mcp_loading_spinner: Spinner | None = None
+        self._scan_status: Text | None = None
 
         self._current_content_block: _ContentBlock | None = None
         self._tool_call_blocks: dict[str, _ToolCallBlock] = {}
@@ -871,6 +878,8 @@ class _LiveView:
         blocks: list[RenderableType] = []
         if self._mcp_loading_spinner is not None:
             blocks.append(self._mcp_loading_spinner)
+        elif self._scan_status is not None:
+            blocks.append(Panel(self._scan_status, title="Scan", border_style="cyan"))
         elif self._mooning_spinner is not None:
             blocks.append(self._mooning_spinner)
         elif self._compacting_spinner is not None:
@@ -936,6 +945,53 @@ class _LiveView:
                 pass
             case SubagentEvent():
                 self.handle_subagent_event(msg)
+            case ScanBegin():
+                self._scan_status = Text(
+                    f"Scan started: {msg.root_url}\n"
+                    f"Mode: {msg.mode}\nEngagement: {msg.engagement_id}",
+                    style="cyan",
+                )
+                self.refresh_soon()
+            case ScanRunning():
+                lines = [f"Scan: {msg.phase}"]
+                if msg.target:
+                    lines.append(f"Target: {msg.target}")
+                if msg.step is not None:
+                    lines.append(f"Step: {msg.step}")
+                if msg.elapsed_seconds is not None:
+                    lines.append(f"Elapsed: {msg.elapsed_seconds}s")
+                if msg.detail:
+                    lines.append(msg.detail)
+                self._scan_status = Text("\n".join(lines), style="cyan")
+                self.refresh_soon()
+            case ScanJobBegin():
+                self._scan_status = Text(
+                    f"Job: {msg.phase}\nTarget: {msg.target_id or 'root'}",
+                    style="cyan",
+                )
+                self.refresh_soon()
+            case ScanJobEnd():
+                style = "green" if msg.success else "red"
+                self._scan_status = Text(
+                    f"Job {msg.phase}: {'OK' if msg.success else 'FAILED'}\n{msg.summary}",
+                    style=style,
+                )
+                self.refresh_soon()
+            case FindingDiscovered():
+                sev = msg.severity.lower()
+                color = "red" if sev in ("critical", "high") else "yellow"
+                self._scan_status = Text(
+                    f"[{msg.severity.upper()}] {msg.title}\nStatus: {msg.status}",
+                    style=color,
+                )
+                self.refresh_soon()
+            case ScanEnd():
+                style = "green" if msg.success else "red"
+                self._scan_status = Text(
+                    f"Scan finished: {msg.root_url}\nFindings: {msg.finding_count}",
+                    style=style,
+                )
+                self.refresh_soon()
             case ApprovalRequest():
                 self.request_approval(msg)
             case QuestionRequest():

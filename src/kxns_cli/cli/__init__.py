@@ -10,8 +10,10 @@ import typer
 
 from kxns_cli.constant import VERSION
 
+from .doctor import doctor_cli
 from .info import cli as info_cli
 from .mcp import cli as mcp_cli
+from .scan import scan_cli
 from .web import cli as web_cli
 
 
@@ -343,6 +345,13 @@ def kxns(
             ),
         ),
     ] = None,
+    no_mcp: Annotated[
+        bool,
+        typer.Option(
+            "--no-mcp",
+            help="Do not load ~/.kxns/mcp.json (skip MCP tool loading at startup).",
+        ),
+    ] = False,
     local_skills_dir: Annotated[
         Path | None,
         typer.Option(
@@ -519,7 +528,7 @@ def kxns(
     file_configs = list(mcp_config_file or [])
     raw_mcp_config = list(mcp_config or [])
 
-    if not file_configs:
+    if not file_configs and not no_mcp:
         default_mcp_file = get_global_mcp_config_file()
         if default_mcp_file.exists():
             file_configs.append(default_mcp_file)
@@ -776,6 +785,8 @@ def api(
 
 cli.add_typer(mcp_cli, name="mcp")
 cli.add_typer(web_cli, name="web")
+cli.add_typer(scan_cli, name="scan")
+cli.add_typer(doctor_cli, name="doctor")
 
 
 if __name__ == "__main__":

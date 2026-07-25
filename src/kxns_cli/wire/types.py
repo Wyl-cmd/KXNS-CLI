@@ -124,6 +124,62 @@ class StatusUpdate(BaseModel):
     """The current model name. None means no change."""
 
 
+class ScanBegin(BaseModel):
+    """Scan orchestration started."""
+
+    engagement_id: str
+    root_url: str
+    mode: str
+
+
+class ScanEnd(BaseModel):
+    """Scan orchestration finished."""
+
+    engagement_id: str
+    root_url: str
+    success: bool
+    finding_count: int = 0
+
+
+class ScanJobBegin(BaseModel):
+    """A scan coordinator job started."""
+
+    engagement_id: str
+    job_id: str
+    phase: str
+    target_id: str | None = None
+
+
+class ScanJobEnd(BaseModel):
+    """A scan coordinator job finished."""
+
+    engagement_id: str
+    job_id: str
+    phase: str
+    success: bool
+    summary: str = ""
+
+
+class FindingDiscovered(BaseModel):
+    """A finding was recorded on the blackboard."""
+
+    engagement_id: str
+    finding_id: str
+    title: str
+    severity: str
+    status: str
+
+
+class ScanRunning(BaseModel):
+    """Scan progress update for TUI (heartbeat)."""
+
+    engagement_id: str
+    phase: str
+    target: str | None = None
+    step: int | None = None
+    elapsed_seconds: int | None = None
+    detail: str | None = None
+
 class SubagentEvent(BaseModel):
     """
     An event from a subagent.
@@ -377,6 +433,12 @@ type Event = (
     | StepInterrupted
     | CompactionBegin
     | CompactionEnd
+    | ScanBegin
+    | ScanEnd
+    | ScanJobBegin
+    | ScanJobEnd
+    | FindingDiscovered
+    | ScanRunning
     | MCPLoadingBegin
     | MCPLoadingEnd
     | StatusUpdate
@@ -461,6 +523,12 @@ __all__ = [
     "StepInterrupted",
     "CompactionBegin",
     "CompactionEnd",
+    "ScanBegin",
+    "ScanEnd",
+    "ScanJobBegin",
+    "ScanJobEnd",
+    "FindingDiscovered",
+    "ScanRunning",
     "MCPLoadingBegin",
     "MCPLoadingEnd",
     "StatusUpdate",

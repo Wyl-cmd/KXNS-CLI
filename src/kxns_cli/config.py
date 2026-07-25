@@ -128,8 +128,27 @@ class Services(BaseModel):
 class MCPClientConfig(BaseModel):
     """MCP client configuration."""
 
-    tool_call_timeout_ms: int = 60000
+    tool_call_timeout_ms: int = 120000
     """Timeout for tool calls in milliseconds."""
+    connect_timeout_ms: int = 30000
+    """Timeout when connecting to an MCP server at startup (list_tools)."""
+
+
+class LLMClientConfig(BaseModel):
+    """LLM HTTP client timeouts."""
+
+    request_timeout_seconds: int = Field(
+        default=300,
+        ge=30,
+        le=1800,
+        description="HTTP timeout for each LLM API request (seconds)",
+    )
+    scan_request_timeout_seconds: int = Field(
+        default=240,
+        ge=30,
+        le=1800,
+        description="Shorter LLM timeout for scan worker jobs",
+    )
 
 
 class MCPConfig(BaseModel):
@@ -137,6 +156,108 @@ class MCPConfig(BaseModel):
 
     client: MCPClientConfig = Field(
         default_factory=MCPClientConfig, description="MCP client configuration"
+    )
+
+
+class BlackboardConfig(BaseModel):
+    """Blackboard (PostgreSQL) configuration."""
+
+    enabled: bool = True
+    backend: Literal["postgres", "memory"] = "postgres"
+    host: str = "127.0.0.1"
+    port: int = 5432
+    user: str = "kxns"
+    password: SecretStr = SecretStr("kxns")
+    database: str = "kxns_blackboard"
+    pool_size: int = Field(default=5, ge=1, le=50)
+    require_postgres: bool = Field(
+        default=True,
+        description="If true, fail when PostgreSQL is unavailable instead of memory fallback",
+    )
+
+    @field_serializer("password", when_used="json")
+    def dump_bb_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+# Attack tool approval actions — auto-approved when authorized_attack is enabled
+AUTHORIZED_AUTO_APPROVE_ACTIONS: frozenset[str] = frozenset(
+    {
+        "run command",
+        "run kali tool",
+        "burp attack",
+        "fetch url",
+        "mcp:*",
+    }
+)
+
+
+class ScanOrchestrationConfig(BaseModel):
+    """Scan orchestration defaults."""
+
+    max_concurrency: int = Field(default=4, ge=1, le=32)
+    max_depth: int = Field(default=2, ge=0, le=10)
+    default_severity_filter: list[str] = Field(default_factory=lambda: ["high", "critical"])
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_max_slots: int = Field(default=8, ge=1, le=64)
+    redis_enabled: bool = True
+    confirmed_only_reports: bool = Field(
+        default=True,
+        description="Final scan reports include only confirmed findings",
+    )
+    strict_finding_validation: bool = Field(
+        default=True,
+        description="Reject invalid ReportFinding submissions (esp. confirmed without POC)",
+    )
+    precheck_enabled: bool = Field(
+        default=True,
+        description="Run environment precheck before starting scans",
+    )
+    authorized_attack: bool = Field(
+        default=True,
+        description="Global authorized pentest mode: YOLO + auto-approve attack tools",
+    )
+    auto_record_kali_findings: bool = Field(
+        default=True,
+        description="RunKali structured output auto-writes candidate findings to blackboard",
+    )
+    job_timeout_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=7200,
+        description="Max seconds per scan soul job before timeout",
+    )
+    evaluate_confidence_min: float = Field(
+        default=0.65,
+        ge=0.0,
+        le=1.0,
+        description="Minimum evaluate confidence to proceed to confirm phase",
+    )
+    auto_scan_on_hunt_intent: bool = Field(
+        default=True,
+        description="When user asks to hunt vulns with a URL, auto-start ScanManager",
+    )
+    prompt_enrichment_enabled: bool = Field(
+        default=True,
+        description="Inject optimized hunt brief into scan job prompts",
+    )
+    job_stall_seconds: int = Field(
+        default=180,
+        ge=60,
+        le=3600,
+        description="Cancel scan job if no wire output for this many seconds",
+    )
+    heartbeat_interval_seconds: int = Field(
+        default=30,
+        ge=10,
+        le=300,
+        description="Emit ScanRunning heartbeat interval during scan jobs",
+    )
+    scan_max_steps_per_turn: int = Field(
+        default=40,
+        ge=5,
+        le=200,
+        description="Max agent steps per scan worker job (lower than interactive default)",
     )
 
 
@@ -167,11 +288,22 @@ class Config(BaseModel):
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
+    llm_client: LLMClientConfig = Field(
+        default_factory=LLMClientConfig, description="LLM HTTP client settings"
+    )
+    blackboard: BlackboardConfig | None = Field(
+        default_factory=BlackboardConfig, description="Blackboard storage configuration"
+    )
+    scan: ScanOrchestrationConfig = Field(
+        default_factory=ScanOrchestrationConfig, description="Scan orchestration defaults"
+    )
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
         if self.default_model and self.default_model not in self.models:
-            logger.warning(f"Default model {self.default_model} not found in models, using as custom model")
+            logger.warning(
+                f"Default model {self.default_model} not found in models, using as custom model"
+            )
         for model in self.models.values():
             if model.provider not in self.providers:
                 raise ValueError(f"Provider {model.provider} not found in providers")

@@ -1,0 +1,28 @@
+version: 1
+agent:
+  extend: default
+  name: scan
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are running in **authorized** automated scan mode.
+      Do NOT ask the user for confirmation. Do NOT hesitate — execute attacks and probes immediately.
+      Every security discovery MUST be recorded with ReportFinding.
+  tools:
+    - "kxns_cli.tools.scan.report_finding:ReportFinding"
+    - "kxns_cli.tools.kali.run:RunKali"
+    - "kxns_cli.tools.burp.mcp:BurpMCP"
+    - "kxns_cli.tools.shell:Shell"
+    - "kxns_cli.tools.web:FetchURL"
+    - "kxns_cli.tools.file:Glob"
+    - "kxns_cli.tools.file:Grep"
+    - "kxns_cli.tools.file:WriteFile"
+    - "kxns_cli.tools.todo:SetTodoList"
+  exclude_tools:
+    - "kxns_cli.tools.ask_user:AskUserQuestion"
+    - "kxns_cli.tools.plan:ExitPlanMode"
+    - "kxns_cli.tools.plan.enter:EnterPlanMode"
+  subagents:
+    worker:
+      path: ./worker.yaml
+      description: "Scan worker for parallel target probing."

@@ -203,6 +203,26 @@ kxns mcp remove server-name
 kxns web
 ```
 
+### 扫描编排（Scan）
+
+```bash
+# 环境检查
+kxns doctor
+
+# 全自动扫描（Wildcard 侦察 → Guaranteed 验证 → 报告）
+kxns scan run https://target.example --wildcard --guaranteed --print --yolo
+
+# 交互里也可用：/hunt <url> 或 /scan <url>
+```
+
+无 PostgreSQL 时可在 `~/.kxns/config.toml` 使用内存黑板：
+
+```toml
+[blackboard]
+backend = "memory"
+require_postgres = false
+```
+
 ## 构建
 
 ### 构建二进制文件

@@ -1,0 +1,46 @@
+# 22-phase pentest pipeline (Phase 2)
+phases:
+  - name: scope
+    prompt: "Phase 1/22 Scope: Confirm in-scope assets for engagement {engagement_id}. Report scope notes via ReportFinding severity info."
+  - name: passive_recon
+    prompt: "Phase 2/22 Passive recon for engagement {engagement_id}. OSINT, DNS, certs. Report assets."
+  - name: active_recon
+    prompt: "Phase 3/22 Active recon. Port scan and service detection."
+  - name: subdomain_enum
+    prompt: "Phase 4/22 Subdomain enumeration."
+  - name: web_crawl
+    prompt: "Phase 5/22 Web crawling and endpoint discovery."
+  - name: tech_fingerprint
+    prompt: "Phase 6/22 Technology fingerprinting."
+  - name: vuln_scan
+    prompt: "Phase 7/22 Automated vulnerability scanning (nuclei/nmap scripts)."
+  - name: auth_test
+    prompt: "Phase 8/22 Authentication testing."
+  - name: session_test
+    prompt: "Phase 9/22 Session management tests."
+  - name: access_control
+    prompt: "Phase 10/22 Access control / IDOR checks."
+  - name: injection
+    prompt: "Phase 11/22 Injection testing (SQLi, XSS, command)."
+  - name: ssrf
+    prompt: "Phase 12/22 SSRF testing."
+  - name: xxe
+    prompt: "Phase 13/22 XXE testing."
+  - name: file_upload
+    prompt: "Phase 14/22 File upload tests."
+  - name: business_logic
+    prompt: "Phase 15/22 Business logic review."
+  - name: api_test
+    prompt: "Phase 16/22 API security testing."
+  - name: config_review
+    prompt: "Phase 17/22 Configuration review."
+  - name: crypto
+    prompt: "Phase 18/22 Cryptography checks."
+  - name: exploit
+    prompt: "Phase 19/22 Exploitation of confirmed issues."
+  - name: post_exploit
+    prompt: "Phase 20/22 Post-exploitation (minimal, authorized)."
+  - name: evidence
+    prompt: "Phase 21/22 Collect evidence and artifacts."
+  - name: report
+    prompt: "Phase 22/22 Final report. Summarize confirmed high/critical findings."

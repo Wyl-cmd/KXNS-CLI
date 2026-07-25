@@ -61,6 +61,7 @@ class KxnsCLI:
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
         max_ralph_iterations: int | None = None,
+        llm_request_timeout: float | None = None,
     ) -> KxnsCLI:
         config = config if isinstance(config, Config) else load_config(config)
         if max_steps_per_turn is not None:
@@ -128,6 +129,11 @@ class KxnsCLI:
             thinking=thinking,
             session_id=session.id,
             oauth=None,
+            request_timeout=(
+                llm_request_timeout
+                if llm_request_timeout is not None
+                else float(config.llm_client.request_timeout_seconds)
+            ),
         )
         if llm is not None:
             logger.info("Using LLM provider: {provider}", provider=provider)
@@ -265,7 +271,7 @@ class KxnsCLI:
                 name="\nTip",
                 value=(
                     "Kxns Hunter CLI - A penetration testing focused AI agent.\n"
-                    "Type /web to switch to web UI, or next time run `kxns web` directly."
+                    "Type /web for Web UI, /hunt <url> for auto vuln scan, or run `kxns web` / `kxns scan`."
                 ),
                 level=WelcomeInfoItem.Level.INFO,
             ),

@@ -193,6 +193,7 @@ class KxnsSoul:
 
     def get_plan_file_path(self) -> Path | None:
         from pathlib import Path
+
         plans_dir = Path.home() / ".kxns" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
         return plans_dir / f"{self._runtime.session.id}.md"
@@ -225,21 +226,25 @@ class KxnsSoul:
             return self._approval.is_yolo()
 
         from kxns_cli.tools.plan import ExitPlanMode
+
         exit_tool = self._agent.toolset.find(ExitPlanMode)
         if isinstance(exit_tool, ExitPlanMode):
             exit_tool.bind(self.toggle_plan_mode, path_getter, checker)
 
         from kxns_cli.tools.plan.enter import EnterPlanMode
+
         enter_tool = self._agent.toolset.find(EnterPlanMode)
         if isinstance(enter_tool, EnterPlanMode):
             enter_tool.bind(self.toggle_plan_mode, path_getter, checker, yolo_checker)
 
         from kxns_cli.tools.file.write import WriteFile
+
         write_tool = self._agent.toolset.find(WriteFile)
         if isinstance(write_tool, WriteFile):
             write_tool.bind_plan_mode(checker, path_getter)
 
         from kxns_cli.tools.ask_user import AskUserQuestion
+
         ask_tool = self._agent.toolset.find(AskUserQuestion)
         if isinstance(ask_tool, AskUserQuestion):
             ask_tool.bind_plan_mode(checker)
@@ -351,9 +356,77 @@ class KxnsSoul:
                 )
                 await runner.run(self, "")
             else:
+                from kxns_cli.soul.security_context import (
+                    classify_security_context,
+                    format_security_injection,
+                )
+
+                sec = None
+                if isinstance(user_input, str):
+                    sec = classify_security_context(user_input)
+                    if await self._maybe_auto_hunt_scan(user_input, sec):
+                        return
+                    injection = format_security_injection(sec, user_text=user_input)
+                    if injection:
+                        user_message = Message(
+                            role="user",
+                            content=[TextPart(text=user_input), TextPart(text=injection)],
+                        )
                 await self._turn(user_message)
         finally:
             wire_send(TurnEnd())
+
+    async def _maybe_auto_hunt_scan(self, user_text: str, sec) -> bool:
+        """Start ScanManager when user asks to hunt vulns with a clear URL."""
+        if not sec.should_suggest_scan or not sec.target_url:
+            return False
+        if not self._runtime.config.scan.auto_scan_on_hunt_intent:
+            return False
+
+        from kxns_cli.scan.manager import ScanManager
+        from kxns_cli.scan.models import ScanConfig
+        from kxns_cli.soul.security_context import build_hunt_brief
+        from kxns_cli.wire.types import TextPart
+
+        url = sec.target_url
+        brief = build_hunt_brief(user_text, sec)
+        wire_send(
+            TextPart(
+                text=(
+                    f"检测到挖洞意图，自动启动扫描流水线。\n"
+                    f"目标: {url}\n"
+                    f"模式: Wildcard 侦察 → Guaranteed 验证 → 报告\n"
+                    f"（已根据你的描述优化测试简报）"
+                )
+            )
+        )
+        scan_config = ScanConfig(
+            wildcard=True,
+            guaranteed=True,
+            yolo=True,
+            authorized=self._runtime.config.scan.authorized_attack,
+            hunt_brief=brief,
+            user_intent=user_text.strip(),
+        )
+        manager = ScanManager(self._runtime.config, self._runtime.session.work_dir)
+        try:
+            result = await manager.start_scan(url, scan_config)
+        except Exception as exc:
+            wire_send(TextPart(text=f"[red]自动扫描失败: {exc}[/red]"))
+            logger.exception("Auto hunt scan failed")
+            return True
+
+        wire_send(
+            TextPart(
+                text=(
+                    f"扫描完成。Confirmed/报告内 findings: {len(result.findings)}\n"
+                    f"JSON: {result.report_json_path}\n"
+                    f"MD: {result.report_md_path}\n"
+                    f"若无高危结果，请查看 blackboard 中的 candidate 或缩小/调整目标范围。"
+                )
+            )
+        )
+        return True
 
     async def _turn(self, user_message: Message) -> TurnOutcome:
         if self._runtime.llm is None:
@@ -611,7 +684,9 @@ class KxnsSoul:
 
         result = await _kosong_step_with_retry()
         logger.debug("Got step result: {result}", result=result)
-        status_update = StatusUpdate(token_usage=result.usage, message_id=result.id, plan_mode=self._plan_mode)
+        status_update = StatusUpdate(
+            token_usage=result.usage, message_id=result.id, plan_mode=self._plan_mode
+        )
         if result.usage is not None:
             # mark the token count for the context before the step
             await self._context.update_token_count(result.usage.input)

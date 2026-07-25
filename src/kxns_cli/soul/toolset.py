@@ -28,7 +28,7 @@ from kosong.tooling.mcp import convert_mcp_content
 from kosong.utils.typing import JsonType
 from loguru import logger
 
-from kxns_cli.exception import InvalidToolError, MCPRuntimeError
+from kxns_cli.exception import InvalidToolError
 from kxns_cli.tools import SkipThisTool
 from kxns_cli.tools.utils import ToolRejectedError
 from kxns_cli.wire.types import (
@@ -74,6 +74,7 @@ class KxnsToolset:
         self._hidden_tools: set[str] = set()
         self._mcp_servers: dict[str, MCPServerInfo] = {}
         self._mcp_loading_task: asyncio.Task[None] | None = None
+        self._mcp_wait_timeout_s: float = 35.0
 
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
@@ -221,8 +222,8 @@ class KxnsToolset:
         Load MCP tools from specified MCP configs.
 
         Raises:
-            MCPRuntimeError(KxnsCLIException, RuntimeError): When any MCP server cannot be
-                connected.
+            MCPRuntimeError(KxnsCLIException, RuntimeError): Reserved; connect failures are
+                logged and skipped so the agent can run without optional MCP servers.
         """
         import fastmcp
         from fastmcp.mcp_config import MCPConfig, RemoteMCPServer
@@ -251,6 +252,8 @@ class KxnsToolset:
                 )
 
         oauth_servers: dict[str, str] = {}
+        connect_timeout_s = runtime.config.mcp.client.connect_timeout_ms / 1000.0
+        self._mcp_wait_timeout_s = connect_timeout_s + 10.0
 
         async def _connect_server(
             server_name: str, server_info: MCPServerInfo
@@ -261,7 +264,11 @@ class KxnsToolset:
             server_info.status = "connecting"
             try:
                 async with server_info.client as client:
-                    for tool in await client.list_tools():
+                    tools = await asyncio.wait_for(
+                        client.list_tools(),
+                        timeout=connect_timeout_s,
+                    )
+                    for tool in tools:
                         server_info.tools.append(
                             MCPTool(server_name, tool, client, runtime=runtime)
                         )
@@ -272,6 +279,18 @@ class KxnsToolset:
                 server_info.status = "connected"
                 logger.info("Connected MCP server: {server_name}", server_name=server_name)
                 return server_name, None
+            except TimeoutError:
+                err = TimeoutError(
+                    f"MCP '{server_name}' connect timed out after "
+                    f"{runtime.config.mcp.client.connect_timeout_ms}ms"
+                )
+                logger.error(
+                    "MCP server connect timeout: {server_name} ({timeout_ms}ms)",
+                    server_name=server_name,
+                    timeout_ms=runtime.config.mcp.client.connect_timeout_ms,
+                )
+                server_info.status = "failed"
+                return server_name, err
             except Exception as e:
                 logger.error(
                     "Failed to connect MCP server: {server_name}, error: {error}",
@@ -313,7 +332,12 @@ class KxnsToolset:
 
             if failed_servers:
                 _toast_mcp("mcp connection failed")
-                raise MCPRuntimeError(f"Failed to connect MCP servers: {failed_servers}")
+                for name, error in failed_servers.items():
+                    logger.warning(
+                        "Skipping unavailable MCP server '{name}': {error}",
+                        name=name,
+                        error=error,
+                    )
             if unauthorized_servers:
                 _toast_mcp("mcp authorization needed")
             else:
@@ -348,7 +372,15 @@ class KxnsToolset:
         if not task:
             return
         try:
-            await task
+            await asyncio.wait_for(task, timeout=self._mcp_wait_timeout_s)
+        except TimeoutError:
+            logger.warning(
+                "MCP tool loading timed out after {s}s; continuing without optional MCP",
+                s=int(self._mcp_wait_timeout_s),
+            )
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
         finally:
             if self._mcp_loading_task is task and task.done():
                 self._mcp_loading_task = None

@@ -98,6 +98,9 @@ class Approval:
         if action in self._state.auto_approve_actions:
             return True
 
+        if action.startswith("mcp:") and "mcp:*" in self._state.auto_approve_actions:
+            return True
+
         request = Request(
             id=str(uuid.uuid4()),
             tool_call_id=tool_call.id,
@@ -122,6 +125,10 @@ class Approval:
                 logger.debug(
                     "Auto-approving previously requested action: {action}", action=request.action
                 )
+                self.resolve_request(request.id, "approve")
+                continue
+            if request.action.startswith("mcp:") and "mcp:*" in self._state.auto_approve_actions:
+                logger.debug("Auto-approving MCP action: {action}", action=request.action)
                 self.resolve_request(request.id, "approve")
                 continue
 

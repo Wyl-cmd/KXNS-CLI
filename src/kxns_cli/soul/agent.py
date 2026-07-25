@@ -15,7 +15,7 @@ from kosong.tooling import Toolset
 
 from kxns_cli.agentspec import load_agent_spec
 from kxns_cli.auth.oauth import OAuthManager
-from kxns_cli.config import Config
+from kxns_cli.config import AUTHORIZED_AUTO_APPROVE_ACTIONS, Config
 from kxns_cli.exception import MCPConfigError, SystemPromptTemplateError
 from kxns_cli.llm import LLM
 from kxns_cli.session import Session
@@ -29,6 +29,8 @@ from kxns_cli.utils.path import list_directory
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
+
+    from kxns_cli.blackboard.store import BlackboardStore
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -77,6 +79,8 @@ class Runtime:
     environment: Environment
     skills: dict[str, Skill]
     additional_dirs: list[KaosPath]
+    blackboard: BlackboardStore | None = None
+    scan_engagement_id: Any = None
 
     @staticmethod
     async def create(
@@ -155,6 +159,9 @@ class Runtime:
             auto_approve_actions=saved_actions,
             on_change=_on_approval_change,
         )
+        if config.scan.authorized_attack:
+            approval_state.yolo = True
+            approval_state.auto_approve_actions |= AUTHORIZED_AUTO_APPROVE_ACTIONS
 
         return Runtime(
             config=config,
@@ -261,7 +268,7 @@ async def load_agent(
             is invalid.
         InvalidToolError(KxnsCLIException, ValueError): When any tool cannot be loaded.
         MCPConfigError(KxnsCLIException, ValueError): When any MCP configuration is invalid.
-        MCPRuntimeError(KxnsCLIException, RuntimeError): When any MCP server cannot be connected.
+        MCPRuntimeError(KxnsCLIException, RuntimeError): Invalid MCP config only.
     """
     logger.info("Loading agent: {agent_file}", agent_file=agent_file)
     agent_spec = load_agent_spec(agent_file)
@@ -296,6 +303,10 @@ async def load_agent(
         LaborMarket: runtime.labor_market,
         Environment: runtime.environment,
     }
+    if runtime.blackboard is not None:
+        from kxns_cli.blackboard.store import BlackboardStore
+
+        tool_deps[BlackboardStore] = runtime.blackboard
     tools = agent_spec.tools
     if agent_spec.exclude_tools:
         logger.debug("Excluding tools: {tools}", tools=agent_spec.exclude_tools)

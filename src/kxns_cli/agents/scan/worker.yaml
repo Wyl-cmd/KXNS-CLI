@@ -1,0 +1,12 @@
+version: 1
+agent:
+  extend: ./agent.yaml
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are a scan worker subagent. The main agent cannot see your context.
+      Summarize all findings and ReportFinding calls in your final message.
+  exclude_tools:
+    - "kxns_cli.tools.multiagent:Task"
+    - "kxns_cli.tools.multiagent:CreateSubagent"
+    - "kxns_cli.tools.ask_user:AskUserQuestion"
+  subagents: {}

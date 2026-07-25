@@ -393,10 +393,100 @@ def feedback(app: Shell, args: str):
     """Submit feedback to make KXNS Hunter CLI better"""
     import webbrowser
 
-    ISSUE_URL = "https://github.com/MoonshotAI/kxns-cli/issues"
+    ISSUE_URL = "https://github.com/Wyl-cmd/kxns-cli/issues"
     if webbrowser.open(ISSUE_URL):
         return
     console.print(f"Please submit feedback at [underline]{ISSUE_URL}[/underline].")
+
+
+@registry.command
+async def hunt(app: Shell, args: str):
+    """口语化全自动挖洞: /hunt <url> 或 /hunt 帮我挖 example.com 的漏洞"""
+    import shlex
+
+    from kxns_cli.config import load_config
+    from kxns_cli.scan.manager import ScanManager
+    from kxns_cli.scan.models import ScanConfig
+    from kxns_cli.soul.security_context import (
+        build_hunt_brief,
+        classify_security_context,
+        extract_target_url,
+    )
+
+    soul = ensure_kxns_soul(app)
+    if soul is None:
+        return
+
+    text = args.strip()
+    if not text:
+        console.print("[red]Usage: /hunt <url> 或 /hunt 帮我挖 https://target.com 的漏洞[/red]")
+        return
+
+    url = extract_target_url(text)
+    if not url:
+        parts = shlex.split(text)
+        if parts:
+            url = parts[0] if parts[0].startswith("http") else f"https://{parts[0]}"
+    if not url:
+        console.print("[red]未识别到目标 URL，请提供完整地址。[/red]")
+        return
+
+    sec = classify_security_context(text)
+    brief = build_hunt_brief(text, sec)
+    config = load_config()
+    scan_config = ScanConfig(
+        wildcard=True,
+        guaranteed=True,
+        yolo=True,
+        hunt_brief=brief,
+        user_intent=text,
+    )
+    manager = ScanManager(config, soul.runtime.session.work_dir)
+    console.print(f"[cyan]全自动挖洞启动: {url}[/cyan]")
+    console.print("[dim]Wildcard 侦察 → Guaranteed 验证 → 报告输出（进度见上方 Scan 面板）[/dim]")
+    result = await manager.start_scan(url, scan_config)
+    console.print(
+        f"[green]完成[/green] Findings: {len(result.findings)} | "
+        f"JSON: {result.report_json_path} | MD: {result.report_md_path}"
+    )
+
+
+@registry.command
+async def scan(app: Shell, args: str):
+    """Run scan orchestration: /scan <url> [--wildcard] [--guaranteed]"""
+    import shlex
+
+    from kxns_cli.config import load_config
+    from kxns_cli.scan.manager import ScanManager
+    from kxns_cli.scan.models import ScanConfig
+
+    parts = shlex.split(args.strip()) if args.strip() else []
+    if not parts:
+        console.print(
+            "[red]Usage: /scan <url> [--wildcard] [--guaranteed] [--phased] [--swarm][/red]"
+        )
+        return
+
+    url = parts[0]
+    flags = set(parts[1:])
+    scan_config = ScanConfig(
+        wildcard="--wildcard" in flags or not flags,
+        guaranteed="--guaranteed" in flags or not flags,
+        phased="--phased" in flags,
+        swarm="--swarm" in flags,
+        yolo=True,
+    )
+    soul = ensure_kxns_soul(app)
+    if soul is None:
+        return
+    config = load_config()
+    manager = ScanManager(config, soul.runtime.session.work_dir)
+    console.print(f"[cyan]Starting scan: {url}[/cyan]")
+    result = await manager.start_scan(url, scan_config)
+    console.print(
+        f"[green]Scan finished[/green] Findings: {len(result.findings)} | "
+        f"JSON: {result.report_json_path}"
+    )
 
 
 @registry.command(aliases=["reset"])
