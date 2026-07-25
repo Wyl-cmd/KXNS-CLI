@@ -5,45 +5,28 @@ description: Answer KXNS CLI usage, configuration, and troubleshooting questions
 
 # KXNS CLI Help
 
-Help users with KXNS CLI questions by consulting documentation and source code.
+Help users with KXNS CLI questions by consulting local documentation and source code.
 
 ## Strategy
 
-1. **Prefer official documentation** for most questions
-2. **Read local source** when in kxns-cli project itself, or when user is developing with kxns-cli as a library (e.g., importing from `kxns_cli` in their code)
-3. **Clone and explore source** for complex internals not covered in docs - **ask user for confirmation first**
+1. **Prefer project documentation** — read `README.md` in the project root (single source of user docs)
+2. **Read local source** when the question is about internals or configuration
+3. **Do not clone or fetch from external repositories** — this is a standalone local project
 
 ## Documentation
 
-Base URL: `https://github.com/Wyl-cmd/kxns-cli`
-
-Fetch documentation index to find relevant pages:
-
-```
-https://github.com/Wyl-cmd/kxns-cli
-```
-
-### Topic Mapping
-
 | Topic | Location |
 |-------|----------|
-| Installation, first run | README.md |
-| Config files | src/kxns_cli/config.py |
-| Providers, models | src/kxns_cli/llm.py |
-| Environment variables | src/kxns_cli/utils/envvar.py |
-| Slash commands | src/kxns_cli/soul/slash.py |
-| CLI flags | src/kxns_cli/cli/__init__.py |
-| Keyboard shortcuts | src/kxns_cli/ui/shell/keyboard.py |
-| MCP | src/kxns_cli/cli/mcp.py |
-| Agents | src/kxns_cli/agents/ |
-| Skills | src/kxns_cli/skills/ |
+| Installation (Kali Linux) | `README.md`, `scripts/install-kali.sh` |
+| Config files | `src/kxns_cli/config.py`, `~/.kxns/config.toml` |
+| Providers, models | `src/kxns_cli/llm.py`, `src/kxns_cli/auth/platforms.py` |
+| Slash commands | `src/kxns_cli/soul/slash.py`, `src/kxns_cli/ui/shell/slash.py` |
+| CLI flags | `src/kxns_cli/cli/__init__.py` |
+| MCP | `src/kxns_cli/cli/mcp.py` |
+| Agents | `src/kxns_cli/agents/` |
+| Skills | `src/kxns_cli/skills/`, `.agents/skills/` |
+| Wire mode | `src/kxns_cli/wire/` |
 
 ## Source Code
 
-Repository: `https://github.com/Wyl-cmd/kxns-cli`
-
-When to read source:
-
-- In kxns-cli project directory (check `pyproject.toml` for `name = "kxns-cli"`)
-- User is importing `kxns_cli` as a library in their project
-- Question about internals not covered in docs (ask user before cloning)
+When answering internals questions, read files under `src/kxns_cli/` directly. Do not reference upstream Kimi/Moonshot repositories.
