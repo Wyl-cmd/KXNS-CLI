@@ -199,6 +199,8 @@ class Runtime:
             skills=self.skills,
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
+            blackboard=self.blackboard,
+            scan_engagement_id=self.scan_engagement_id,
         )
 
     def copy_for_dynamic_subagent(self) -> Runtime:
@@ -216,6 +218,8 @@ class Runtime:
             skills=self.skills,
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
+            blackboard=self.blackboard,
+            scan_engagement_id=self.scan_engagement_id,
         )
 
 

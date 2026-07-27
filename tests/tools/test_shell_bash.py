@@ -29,7 +29,8 @@ async def test_command_with_error(shell_tool: Shell):
     result = await shell_tool(Params(command="ls /nonexistent/directory"))
     assert result.is_error
     assert isinstance(result.output, str)
-    assert "No such file or directory" in result.output
+    # 路径名与 locale 无关，ls 错误输出必然包含传入的路径（兼容中英文 locale）
+    assert "/nonexistent/directory" in result.output
     assert "Command failed with exit code:" in result.message
     assert "Failed with exit code:" in result.brief
 

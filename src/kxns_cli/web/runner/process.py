@@ -116,6 +116,13 @@ class SessionProcess:
         """Whether the session is currently processing a prompt."""
         return len(self._in_flight_prompt_ids) > 0
 
+    def clear_in_flight(self) -> None:
+        """Clear stale in-flight prompt IDs (e.g. after an error).
+
+        对齐 kimi-cli：error 态下残留的 in-flight ID 已失效，清空后允许新 prompt 放行（OPEN-2）。
+        """
+        self._in_flight_prompt_ids.clear()
+
     @property
     def status(self) -> SessionStatus:
         """Current runtime status snapshot."""
@@ -319,6 +326,8 @@ class SessionProcess:
                         except asyncio.CancelledError:
                             pass
                         stderr_text = "\n".join(stderr_lines) if stderr_lines else "No stderr"
+                        # 先清 busy，再广播错误，避免前端立刻重发时仍被判 busy（对齐 kimi）
+                        self._in_flight_prompt_ids.clear()
                         await self._broadcast(
                             JSONRPCErrorResponse(
                                 id=str(uuid4()),
@@ -332,7 +341,6 @@ class SessionProcess:
                             f"Process exited with {self._process.returncode}: "
                             f"{stderr_text}"
                         )
-                        self._in_flight_prompt_ids.clear()
                         await self._emit_status(
                             "error",
                             reason="process_exit",
@@ -380,6 +388,8 @@ class SessionProcess:
             raise
         except Exception as e:
             logger.warning(f"Unexpected error in read loop: {e.__class__.__name__} {e}")
+            self._in_flight_prompt_ids.clear()
+            await self._emit_status("error", reason="read_loop_error", detail=str(e))
             self._process = None
             self._worker_id = None
 

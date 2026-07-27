@@ -205,7 +205,19 @@ def build_hunt_brief(user_text: str, result: SecurityContextResult) -> str:
     return "\n".join(lines)
 
 
-def format_security_injection(result: SecurityContextResult, *, user_text: str = "") -> str | None:
+def format_security_injection(
+    result: SecurityContextResult,
+    *,
+    user_text: str = "",
+    auto_scan_on_hunt_intent: bool = False,
+) -> str | None:
+    """生成安全上下文注入提示。
+
+    OPEN-3: 新增 ``auto_scan_on_hunt_intent`` 参数，使文案与实际配置一致。
+    - 开启自动扫描时：声明「系统将自动启动 ScanManager」（原行为）。
+    - 关闭自动扫描时（默认）：改为引导用户使用 /skill:hack 或 kxns scan，
+      避免模型误以为会自动启动扫描而给出矛盾回答。
+    """
     if result.hint is None:
         return None
     parts = [
@@ -217,10 +229,18 @@ def format_security_injection(result: SecurityContextResult, *, user_text: str =
     if result.target_url:
         parts.append(f"检测到目标: {result.target_url}")
     if result.should_suggest_scan:
-        parts.append(
-            "用户意图为全自动挖洞：系统将自动启动 ScanManager（wildcard + guaranteed），"
-            "全程展示进度；每个真实 finding 必须 ReportFinding 且含可复现 POC。"
-        )
+        if auto_scan_on_hunt_intent:
+            parts.append(
+                "用户意图为全自动挖洞：系统将自动启动 ScanManager（wildcard + guaranteed），"
+                "全程展示进度；每个真实 finding 必须 ReportFinding 且含可复现 POC。"
+            )
+        else:
+            # OPEN-3: 默认配置下不自动启动扫描，引导用户主动调用
+            parts.append(
+                "用户意图疑似全自动挖洞，但当前未开启自动扫描（auto_scan_on_hunt_intent=False）。"
+                "请引导用户使用 /skill:hack 路由到对应漏洞技能，或运行 `kxns scan` 启动 ScanManager；"
+                "切勿声称系统将自动启动扫描。"
+            )
         if user_text:
             brief = build_hunt_brief(user_text, result)
             parts.append("优化后的测试简报：")

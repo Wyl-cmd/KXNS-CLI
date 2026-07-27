@@ -366,7 +366,11 @@ class KxnsSoul:
                     sec = classify_security_context(user_input)
                     if await self._maybe_auto_hunt_scan(user_input, sec):
                         return
-                    injection = format_security_injection(sec, user_text=user_input)
+                    injection = format_security_injection(
+                        sec,
+                        user_text=user_input,
+                        auto_scan_on_hunt_intent=self._runtime.config.scan.auto_scan_on_hunt_intent,
+                    )
                     if injection:
                         user_message = Message(
                             role="user",
@@ -412,9 +416,10 @@ class KxnsSoul:
         try:
             result = await manager.start_scan(url, scan_config)
         except Exception as exc:
-            wire_send(TextPart(text=f"[red]自动扫描失败: {exc}[/red]"))
+            # 扫描失败不吞掉本轮对话，回落正常 LLM turn
+            wire_send(TextPart(text=f"[red]自动扫描失败: {exc}[/red]\n将继续以普通对话处理本轮请求。"))
             logger.exception("Auto hunt scan failed")
-            return True
+            return False
 
         wire_send(
             TextPart(

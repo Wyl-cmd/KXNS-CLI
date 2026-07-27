@@ -142,9 +142,10 @@ The stdout and stderr will be combined and returned as a string. The output may 
 
 **Guidelines for safety and security:**
 - Each shell tool call will be executed in a fresh shell environment. The shell variables, current working directory changes, and the shell history is not preserved between calls.
+- **IMPORTANT: Do NOT use `cd` alone.** Since each call starts a fresh shell, a standalone `cd` has no effect — the directory change is lost when the call ends. Always chain `cd` with the actual command using `&&`, e.g. `cd /path && ls -la`. Using `cd` by itself is a waste of a tool call and will cause subsequent commands to run in the wrong directory.
 - The tool call will return after the command is finished. You shall not use this tool to execute an interactive command or a command that may run forever. For possibly long-running commands, you shall set `timeout` argument to a reasonable value.
-- Avoid using `..` to access files or directories outside of the working directory.
-- Avoid modifying files outside of the working directory unless explicitly instructed to do so.
+- Avoid using `..` to access files or directories outside the working directory.
+- Avoid modifying files outside the working directory unless explicitly instructed to do so.
 - Never run commands that require superuser privileges unless explicitly instructed to do so.
 
 **Guidelines for efficiency:**

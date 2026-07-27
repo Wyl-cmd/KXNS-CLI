@@ -213,6 +213,15 @@ def create_app(
     }
     if allowed_origins:
         cors_kwargs["allow_origins"] = allowed_origins
+        # OPEN-12: 通配符 origin 与 allow_credentials=True 同时启用违反 CORS 规范，
+        # 浏览器会拒绝；FastAPI 会回显具体 origin 而非 *，导致任意 origin 可携带凭证访问。
+        # 检测到 "*" 时强制禁用 credentials 并告警。
+        if "*" in allowed_origins:
+            cors_kwargs["allow_credentials"] = False
+            logger.warning(
+                "CORS: wildcard origin '*' detected; disabling allow_credentials "
+                "to comply with browser spec. Use explicit origins to enable credentials."
+            )
     else:
         cors_kwargs["allow_origin_regex"] = DEFAULT_ALLOWED_ORIGIN_REGEX.pattern
 

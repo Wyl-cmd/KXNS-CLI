@@ -163,7 +163,8 @@ class BlackboardConfig(BaseModel):
     """Blackboard (PostgreSQL) configuration."""
 
     enabled: bool = True
-    backend: Literal["postgres", "memory"] = "postgres"
+    # 默认 memory，避免无 PostgreSQL 时普通对话/自动扫描被硬失败
+    backend: Literal["postgres", "memory"] = "memory"
     host: str = "127.0.0.1"
     port: int = 5432
     user: str = "kxns"
@@ -171,7 +172,7 @@ class BlackboardConfig(BaseModel):
     database: str = "kxns_blackboard"
     pool_size: int = Field(default=5, ge=1, le=50)
     require_postgres: bool = Field(
-        default=True,
+        default=False,
         description="If true, fail when PostgreSQL is unavailable instead of memory fallback",
     )
 
@@ -214,7 +215,7 @@ class ScanOrchestrationConfig(BaseModel):
         description="Run environment precheck before starting scans",
     )
     authorized_attack: bool = Field(
-        default=True,
+        default=False,
         description="Global authorized pentest mode: YOLO + auto-approve attack tools",
     )
     auto_record_kali_findings: bool = Field(
@@ -234,7 +235,7 @@ class ScanOrchestrationConfig(BaseModel):
         description="Minimum evaluate confidence to proceed to confirm phase",
     )
     auto_scan_on_hunt_intent: bool = Field(
-        default=True,
+        default=False,
         description="When user asks to hunt vulns with a URL, auto-start ScanManager",
     )
     prompt_enrichment_enabled: bool = Field(
@@ -301,9 +302,7 @@ class Config(BaseModel):
     @model_validator(mode="after")
     def validate_model(self) -> Self:
         if self.default_model and self.default_model not in self.models:
-            logger.warning(
-                f"Default model {self.default_model} not found in models, using as custom model"
-            )
+            raise ValueError(f"Default model {self.default_model} not found in models")
         for model in self.models.values():
             if model.provider not in self.providers:
                 raise ValueError(f"Provider {model.provider} not found in providers")

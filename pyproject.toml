@@ -54,6 +54,19 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+kxns_cli = [
+    "agents/**/*.yaml",
+    "agents/**/*.md",
+    "skills/**/*",
+    "prompts/**/*",
+    "tools/**/*.md",
+    "web/static/**/*",
+    "blackboard/*.sql",
+    "scan/**/*.yaml",
+    "py.typed",
+]
+
 [tool.uv.workspace]
 members = [
     "packages/kosong",

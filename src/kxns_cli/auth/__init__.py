@@ -1,60 +1,60 @@
-"""Auth module stubs for kxns-cli (OAuth removed)."""
+"""auth 模块入口（OPEN-8：删除双份 stub，统一 re-export 真实现）。
 
-from typing import Any
+旧版在此处定义了与 auth/oauth.py、auth/platforms.py 重复的 stub，
+导致 `from kxns_cli.auth import X` 与 `from kxns_cli.auth.oauth import X`
+拿到不同对象（`is` 比较为 False），易引发隐蔽 AttributeError。
 
-KXNS_CODE_PLATFORM_ID = "kxns-cli"
+现在改为 re-export 真实现，保证无论从哪个路径导入都拿到同一对象。
+"""
 
+from __future__ import annotations
 
-class OAuthManager:
-    """Stub OAuthManager - OAuth functionality has been removed."""
+from kxns_cli.auth.oauth import (
+    KXNS_CODE_PLATFORM_ID,
+    OAuthEvent,
+    OAuthEventKind,
+    OAuthManager,
+    login_kxns_code,
+    logout_kxns_code,
+)
+from kxns_cli.auth.platforms import (
+    MANAGED_PROVIDER_PREFIX,
+    PLATFORMS,
+    ModelInfo,
+    Platform,
+    get_platform_by_id,
+    get_platform_by_name,
+    get_platform_name_for_provider,
+    is_managed_provider_key,
+    list_models,
+    lookup_model_info,
+    managed_model_key,
+    managed_provider_key,
+    parse_managed_provider_key,
+    refresh_managed_models,
+)
 
-    def __init__(self, config: Any = None):
-        pass
-
-    def common_headers(self) -> dict[str, str]:
-        return {}
-
-    async def refreshing(self, runtime: Any):
-        """No-op context manager."""
-        yield
-
-    def resolve_api_key(self, api_key: Any, oauth_config: Any = None) -> str:
-        """Return the API key directly."""
-        if hasattr(api_key, "get_secret_value"):
-            return api_key.get_secret_value()
-        return str(api_key) if api_key else ""
-
-
-async def login_kxns_code(*args, **kwargs):
-    """Stub - login functionality removed."""
-    raise NotImplementedError("Login functionality has been removed. Please use --api-url, --api-key, and --api-model options.")
-
-
-async def logout_kxns_code(*args, **kwargs):
-    """Stub - logout functionality removed."""
-    pass
-
-
-def get_platform_by_id(platform_id: str) -> dict[str, Any]:
-    """Stub - platform lookup removed."""
-    return {}
-
-
-def get_platform_name_for_provider(provider_type: str) -> str:
-    """Get platform name for provider type."""
-    return provider_type
-
-
-def parse_managed_provider_key(key: str) -> tuple[str, str] | None:
-    """Stub - managed provider key parsing removed."""
-    return None
-
-
-def is_managed_provider_key(key: str) -> bool:
-    """Stub - managed provider key check removed."""
-    return False
-
-
-def refresh_managed_models(*args, **kwargs) -> list[str]:
-    """Stub - managed model refresh removed."""
-    return []
+__all__ = [
+    # oauth
+    "KXNS_CODE_PLATFORM_ID",
+    "OAuthEvent",
+    "OAuthEventKind",
+    "OAuthManager",
+    "login_kxns_code",
+    "logout_kxns_code",
+    # platforms
+    "MANAGED_PROVIDER_PREFIX",
+    "PLATFORMS",
+    "ModelInfo",
+    "Platform",
+    "get_platform_by_id",
+    "get_platform_by_name",
+    "get_platform_name_for_provider",
+    "is_managed_provider_key",
+    "list_models",
+    "lookup_model_info",
+    "managed_model_key",
+    "managed_provider_key",
+    "parse_managed_provider_key",
+    "refresh_managed_models",
+]

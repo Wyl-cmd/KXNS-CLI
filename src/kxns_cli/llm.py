@@ -10,6 +10,7 @@ from kosong.chat_provider import ChatProvider
 from pydantic import SecretStr
 
 from kxns_cli.constant import USER_AGENT
+from kxns_cli.utils.logging import logger
 
 if TYPE_CHECKING:
     from kxns_cli.auth.oauth import OAuthManager
@@ -60,12 +61,26 @@ def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> di
 
     match provider.type:
         case "openai_legacy" | "openai_responses":
-            if base_url := os.getenv("OPENAI_BASE_URL"):
+            # KXNS_* 优先（与欢迎语文案一致），其次兼容 OPENAI_*
+            if base_url := os.getenv("KXNS_API_URL") or os.getenv("KXNS_BASE_URL"):
                 provider.base_url = base_url
-            if api_key := os.getenv("OPENAI_API_KEY"):
+                key = "KXNS_API_URL" if os.getenv("KXNS_API_URL") else "KXNS_BASE_URL"
+                applied[key] = base_url
+            elif base_url := os.getenv("OPENAI_BASE_URL"):
+                provider.base_url = base_url
+                applied["OPENAI_BASE_URL"] = base_url
+            if api_key := os.getenv("KXNS_API_KEY"):
                 provider.api_key = SecretStr(api_key)
+                applied["KXNS_API_KEY"] = "******"
+            elif api_key := os.getenv("OPENAI_API_KEY"):
+                provider.api_key = SecretStr(api_key)
+                applied["OPENAI_API_KEY"] = "******"
         case _:
             pass
+
+    if model_name := os.getenv("KXNS_MODEL_NAME"):
+        model.model = model_name
+        applied["KXNS_MODEL_NAME"] = model_name
 
     if max_context_size := os.getenv("KXNS_MODEL_MAX_CONTEXT_SIZE"):
         model.max_context_size = int(max_context_size)
@@ -103,6 +118,10 @@ def create_llm(
     if provider.type not in {"_echo", "_scripted_echo"} and (
         not provider.base_url or not model.model
     ):
+        logger.warning(
+            "Cannot create LLM: missing base_url or model (provider_type={provider_type})",
+            provider_type=provider.type,
+        )
         return None
 
     resolved_api_key = (
@@ -113,6 +132,7 @@ def create_llm(
     client_kwargs: dict[str, object] = {}
     if request_timeout is not None:
         client_kwargs["timeout"] = request_timeout
+    default_headers = _kxns_default_headers(provider, oauth)
 
     match provider.type:
         case "openai_legacy":
@@ -132,6 +152,7 @@ def create_llm(
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
                 reasoning_key=reasoning_key,
+                default_headers=default_headers,
                 **client_kwargs,
             )
         case "openai_responses":
@@ -141,6 +162,7 @@ def create_llm(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
+                default_headers=default_headers,
                 **client_kwargs,
             )
         case "anthropic":
@@ -152,6 +174,7 @@ def create_llm(
                 api_key=resolved_api_key,
                 default_max_tokens=50000,
                 metadata={"user_id": session_id} if session_id else None,
+                default_headers=default_headers,
                 **client_kwargs,
             )
         case "google_genai" | "gemini":
@@ -161,6 +184,7 @@ def create_llm(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
+                default_headers=default_headers,
                 **client_kwargs,
             )
         case "vertexai":
@@ -172,6 +196,7 @@ def create_llm(
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
                 vertexai=True,
+                default_headers=default_headers,
                 **client_kwargs,
             )
         case "_echo":
@@ -196,6 +221,7 @@ def create_llm(
                     model=model.model,
                     base_url=provider.base_url,
                     api_key=resolved_api_key,
+                    default_headers=default_headers,
                     **client_kwargs,
                 ),
                 chaos_config=ChaosConfig(

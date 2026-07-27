@@ -242,12 +242,11 @@ async def replay_history(ws: WebSocket, session_dir: Path) -> None:
     if not await asyncio.to_thread(wire_file.exists):
         return
 
-    try:
-        lines = await asyncio.to_thread(_read_wire_lines, wire_file)
-        for event_text in lines:
-            await ws.send_text(event_text)
-    except Exception:
-        pass
+    # OPEN-9-A: 不再静默吞异常——WS 抖动时记录日志并向上抛出，
+    # 由 session_stream 外层 catch 处理断连，避免历史静默截断且无日志可查。
+    lines = await asyncio.to_thread(_read_wire_lines, wire_file)
+    for event_text in lines:
+        await ws.send_text(event_text)
 
 
 @router.get("/", summary="List all sessions")
@@ -981,18 +980,22 @@ async def generate_session_title(
         from kosong import generate
         from kosong.message import Message
 
+        from kxns_cli.auth.oauth import OAuthManager
         from kxns_cli.config import load_config
-        from kxns_cli.llm import create_llm
+        from kxns_cli.llm import augment_provider_with_env_vars, create_llm
 
         config = load_config()
         model_name = config.default_model
 
         if model_name and model_name in config.models:
-            model_config = config.models[model_name]
+            model_config = config.models[model_name].model_copy(deep=True)
             provider_config = config.providers.get(model_config.provider)
 
             if provider_config:
-                llm = create_llm(provider_config, model_config)
+                provider_config = provider_config.model_copy(deep=True)
+                oauth = OAuthManager(config)
+                augment_provider_with_env_vars(provider_config, model_config)
+                llm = create_llm(provider_config, model_config, oauth=oauth)
 
                 if llm:
                     system_prompt = (
@@ -1180,19 +1183,27 @@ async def session_stream(
                     except ValueError:
                         in_message = None
                     if isinstance(in_message, JSONRPCPromptMessage):
-                        await websocket.send_text(
-                            JSONRPCErrorResponse(
-                                id=in_message.id,
-                                error=JSONRPCErrorObject(
-                                    code=ErrorCodes.INVALID_STATE,
-                                    message=(
-                                        "Session is busy; wait for completion before sending "
-                                        "a new prompt."
+                        # OPEN-2: error 态下残留的 in-flight ID 已失效，清空后放行新 prompt（对齐 kimi）
+                        if session_process.status.state == "error":
+                            logger.info(
+                                "Clearing stale in-flight prompts for "
+                                f"session {session_id} (was in error state)"
+                            )
+                            session_process.clear_in_flight()
+                        else:
+                            await websocket.send_text(
+                                JSONRPCErrorResponse(
+                                    id=in_message.id,
+                                    error=JSONRPCErrorObject(
+                                        code=ErrorCodes.INVALID_STATE,
+                                        message=(
+                                            "Session is busy; wait for completion before sending "
+                                            "a new prompt."
+                                        ),
                                     ),
-                                ),
-                            ).model_dump_json()
-                        )
-                        continue
+                                ).model_dump_json()
+                            )
+                            continue
 
                 # Update last_session_id on first successful prompt
                 if not last_session_id_updated:

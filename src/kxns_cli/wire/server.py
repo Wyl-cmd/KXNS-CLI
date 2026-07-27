@@ -809,7 +809,7 @@ class WireServer:
             )
 
         from kxns_cli.config import load_config
-        from kxns_cli.llm import create_llm
+        from kxns_cli.llm import augment_provider_with_env_vars, create_llm
 
         try:
             config = load_config()
@@ -837,6 +837,11 @@ class WireServer:
                     message=f"Provider '{model_cfg.provider}' for model '{model_name}' is not configured",
                 ),
             )
+
+        # 深拷贝后套环境变量，与 app.py / 标题生成路径一致
+        model_cfg = model_cfg.model_copy(deep=True)
+        provider_cfg = provider_cfg.model_copy(deep=True)
+        augment_provider_with_env_vars(provider_cfg, model_cfg)
 
         old_llm = self._soul.runtime.llm
         thinking_enabled = old_llm is not None and old_llm.chat_provider.thinking_effort not in (None, "off")

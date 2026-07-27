@@ -12,6 +12,26 @@ from kxns_cli.auth.platforms import lookup_model_info
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
+# 掩码前缀；PATCH 提交的 api_key 若以此开头则视为占位，不覆盖原值
+_API_KEY_MASK_PREFIX = "********"
+
+
+def _mask_secret(secret: str) -> str:
+    """将 API key 转为掩码：空→空；长度<=4→'****'；否则保留末 4 位。
+
+    用于 GET /api/config 返回前端，避免明文泄露密钥（OPEN-1）。
+    """
+    if not secret:
+        return ""
+    if len(secret) <= 4:
+        return "****"
+    return _API_KEY_MASK_PREFIX + secret[-4:]
+
+
+def _is_masked_api_key(value: str) -> bool:
+    """判断前端提交的 api_key 是否为掩码占位（若是则保留原值不覆盖）。"""
+    return bool(value) and value.startswith(_API_KEY_MASK_PREFIX)
+
 
 class ConfigModel(BaseModel):
     """Model configuration for frontend."""
@@ -60,7 +80,8 @@ class UpdateGlobalConfigRequest(BaseModel):
 
     default_model: str | None = Field(default=None, description="New default model")
     default_thinking: bool | None = Field(default=None, description="New default thinking mode")
-    restart_running_sessions: bool = Field(default=False, description="Whether to restart running sessions")
+    # 默认重启，避免改模型后 worker 仍用旧配置（对齐 kimi）
+    restart_running_sessions: bool = Field(default=True, description="Whether to restart running sessions")
     force_restart_busy_sessions: bool = Field(default=False, description="Whether to force restart busy sessions")
 
 
@@ -68,7 +89,12 @@ class UpdateGlobalConfigResponse(BaseModel):
     """Response after updating global config."""
 
     config: GlobalConfig = Field(description="Updated global config")
-    restarted_sessions: list[str] = Field(default_factory=list, description="IDs of restarted sessions")
+    restarted_session_ids: list[str] = Field(
+        default_factory=list, description="IDs of restarted sessions"
+    )
+    skipped_busy_session_ids: list[str] = Field(
+        default_factory=list, description="IDs of busy sessions that were skipped"
+    )
 
 
 class UpdateApiConfigRequest(BaseModel):
@@ -89,7 +115,12 @@ class UpdateApiConfigResponse(BaseModel):
     """Response after updating API configuration."""
 
     config: GlobalConfig = Field(description="Updated global config")
-    restarted_sessions: list[str] = Field(default_factory=list, description="IDs of restarted sessions")
+    restarted_session_ids: list[str] = Field(
+        default_factory=list, description="IDs of restarted sessions"
+    )
+    skipped_busy_session_ids: list[str] = Field(
+        default_factory=list, description="IDs of busy sessions that were skipped"
+    )
 
 
 def _build_global_config() -> GlobalConfig:
@@ -114,25 +145,16 @@ def _build_global_config() -> GlobalConfig:
                 max_context_size=model.max_context_size,
                 capabilities=capabilities,
                 base_url=provider.base_url or "",
-                api_key=provider.api_key.get_secret_value() if provider.api_key else "",
+                api_key=_mask_secret(provider.api_key.get_secret_value()) if provider.api_key else "",
                 reasoning_key=provider.reasoning_key or "",
             )
         )
 
     if config.default_model and config.default_model not in config.models:
-        provider = config.providers.get("custom")
-        models.append(
-            ConfigModel(
-                name=config.default_model,
-                model=config.default_model,
-                provider="custom",
-                provider_type=provider.type if provider else "openai_legacy",
-                max_context_size=128000,
-                capabilities=None,
-                base_url=provider.base_url or "" if provider else "",
-                api_key=provider.api_key.get_secret_value() if provider and provider.api_key else "",
-                reasoning_key=provider.reasoning_key or "" if provider else "",
-            )
+        # 严格校验下不应出现；若出现则视为配置损坏，直接报错
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Default model '{config.default_model}' not found in models",
         )
 
     return GlobalConfig(
@@ -142,6 +164,15 @@ def _build_global_config() -> GlobalConfig:
     )
 
 
+def _ensure_sensitive_apis_allowed(request: Request) -> None:
+    """限制模式下禁止敏感配置读写（对齐 kimi）。"""
+    if getattr(request.app.state, "restrict_sensitive_apis", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sensitive config APIs are disabled in this mode.",
+        )
+
+
 @router.get("", summary="Get global config snapshot")
 async def get_global_config() -> GlobalConfig:
     """Get global config snapshot."""
@@ -149,8 +180,9 @@ async def get_global_config() -> GlobalConfig:
 
 
 @router.get("/toml", summary="Get config.toml content")
-async def get_config_toml() -> ConfigToml:
+async def get_config_toml(http_request: Request) -> ConfigToml:
     """Get config.toml content."""
+    _ensure_sensitive_apis_allowed(http_request)
     config_file = get_config_file()
     if not config_file.exists():
         return ConfigToml(content="", path=str(config_file))
@@ -158,8 +190,12 @@ async def get_config_toml() -> ConfigToml:
 
 
 @router.put("/toml", summary="Update config.toml")
-async def update_config_toml(request: UpdateConfigTomlRequest) -> UpdateConfigTomlResponse:
+async def update_config_toml(
+    request: UpdateConfigTomlRequest,
+    http_request: Request,
+) -> UpdateConfigTomlResponse:
     """Update config.toml."""
+    _ensure_sensitive_apis_allowed(http_request)
     try:
         load_config_from_string(request.content)
 
@@ -180,6 +216,8 @@ async def update_global_config(
 ) -> UpdateGlobalConfigResponse:
     """Update global config (default_model, default_thinking)."""
     import tomlkit
+
+    _ensure_sensitive_apis_allowed(http_request)
 
     config_file = get_config_file()
     if config_file.exists():
@@ -208,6 +246,7 @@ async def update_global_config(
         )
 
     restarted_session_ids: list[str] = []
+    skipped_busy_session_ids: list[str] = []
 
     if request.restart_running_sessions:
         from kxns_cli.web.runner.process import KxnsRunner
@@ -219,10 +258,13 @@ async def update_global_config(
                 force=request.force_restart_busy_sessions,
             )
             restarted_session_ids = [str(sid) for sid in result.restarted_session_ids]
+            skipped = getattr(result, "skipped_busy_session_ids", None) or []
+            skipped_busy_session_ids = [str(sid) for sid in skipped]
 
     return UpdateGlobalConfigResponse(
         config=_build_global_config(),
-        restarted_sessions=restarted_session_ids,
+        restarted_session_ids=restarted_session_ids,
+        skipped_busy_session_ids=skipped_busy_session_ids,
     )
 
 
@@ -231,8 +273,13 @@ async def update_api_config(
     request: UpdateApiConfigRequest,
     http_request: Request,
 ) -> UpdateApiConfigResponse:
-    """Update API configuration (base_url, api_key, model) using tomlkit."""
+    """Update API configuration (base_url, api_key, model) using tomlkit.
+
+    与 `kxns api` 保持同一 schema：models.<name>.provider = \"custom\"。
+    """
     import tomlkit
+
+    _ensure_sensitive_apis_allowed(http_request)
 
     config_file = get_config_file()
     if config_file.exists():
@@ -240,6 +287,62 @@ async def update_api_config(
         doc = tomlkit.parse(content)
     else:
         doc = tomlkit.document()
+
+    # 仅切换 thinking：不改写 model/provider，避免 Settings 开关破坏已有配置
+    thinking_only = (
+        request.model is None
+        and request.base_url is None
+        and request.api_key is None
+        and request.max_context_size is None
+        and request.reasoning_key is None
+        and (
+            request.thinking is not None
+            or request.default_thinking is not None
+            or request.image_input is not None
+        )
+    )
+    if thinking_only:
+        model_name = doc.get("default_model", "")
+        if not model_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No default model configured; set API settings first",
+            )
+        if request.default_thinking is not None:
+            doc["default_thinking"] = request.default_thinking
+        if "models" in doc and model_name in doc["models"]:
+            model_table = doc["models"][model_name]
+            if request.image_input is not None or request.thinking is not None:
+                existing_caps = model_table.get("capabilities")
+                caps = list(existing_caps) if isinstance(existing_caps, list) else []
+                if request.image_input is not None:
+                    if request.image_input:
+                        if "image_in" not in caps:
+                            caps.append("image_in")
+                    else:
+                        caps = [c for c in caps if c != "image_in"]
+                if request.thinking is not None:
+                    if request.thinking:
+                        if "thinking" not in caps:
+                            caps.append("thinking")
+                    else:
+                        caps = [c for c in caps if c not in ("thinking", "always_thinking")]
+                if caps:
+                    model_table["capabilities"] = caps
+                elif "capabilities" in model_table:
+                    del model_table["capabilities"]
+        content = tomlkit.dumps(doc)
+        try:
+            load_config_from_string(content)
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(content, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to update thinking settings: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+        return UpdateApiConfigResponse(config=_build_global_config())
 
     model_name = request.model or doc.get("default_model", "")
     if not model_name:
@@ -259,13 +362,27 @@ async def update_api_config(
         doc["models"][model_name] = tomlkit.table()
     model_table = doc["models"][model_name]
 
+    # 保留已有 provider；仅新建模型时默认 custom（与 kxns api 一致）
     old_provider_name = model_table.get("provider")
-    provider_name = model_name
+    provider_name = (
+        old_provider_name
+        if isinstance(old_provider_name, str) and old_provider_name
+        else "custom"
+    )
     model_table["provider"] = provider_name
-    model_table["model"] = model_name
-    model_table["max_context_size"] = request.max_context_size or model_table.get("max_context_size", 128000)
+    if "model" not in model_table or request.model is not None:
+        model_table["model"] = request.model or model_name
+    if request.max_context_size is not None:
+        model_table["max_context_size"] = request.max_context_size
+    elif "max_context_size" not in model_table:
+        model_table["max_context_size"] = 128000
 
-    if old_provider_name and isinstance(old_provider_name, str) and old_provider_name != provider_name:
+    # 若旧 provider 名不是 custom，且无其它模型引用，则迁移/清理
+    if (
+        old_provider_name
+        and isinstance(old_provider_name, str)
+        and old_provider_name != provider_name
+    ):
         if "providers" in doc and old_provider_name in doc["providers"]:
             old_provider = doc["providers"][old_provider_name]
             if provider_name not in doc["providers"]:
@@ -276,7 +393,7 @@ async def update_api_config(
                     new_provider[key] = old_provider[key]
             other_models_using_old = any(
                 k != model_name
-                and isinstance(doc["models"].get(k), dict)
+                and hasattr(doc["models"].get(k), "get")
                 and doc["models"][k].get("provider") == old_provider_name
                 for k in doc["models"]
             )
@@ -315,7 +432,8 @@ async def update_api_config(
         provider_table["type"] = "openai_legacy"
     if request.base_url is not None:
         provider_table["base_url"] = request.base_url
-    if request.api_key is not None:
+    # OPEN-1: 前端提交掩码占位时不覆盖原 key，仅当输入新 key 才写入
+    if request.api_key is not None and not _is_masked_api_key(request.api_key):
         provider_table["api_key"] = request.api_key
     if request.reasoning_key is not None:
         if request.reasoning_key:
@@ -351,7 +469,7 @@ async def update_api_config(
 
     return UpdateApiConfigResponse(
         config=_build_global_config(),
-        restarted_sessions=restarted_session_ids,
+        restarted_session_ids=restarted_session_ids,
     )
 
 
@@ -394,7 +512,9 @@ class DeleteModelResponse(BaseModel):
     """Response after deleting a model."""
 
     config: GlobalConfig = Field(description="Updated global config")
-    restarted_sessions: list[str] = Field(default_factory=list, description="IDs of restarted sessions")
+    restarted_session_ids: list[str] = Field(
+        default_factory=list, description="IDs of restarted sessions"
+    )
 
 
 @router.delete("/models/{model_name}", summary="Delete a model configuration")
@@ -404,6 +524,8 @@ async def delete_model(
 ) -> DeleteModelResponse:
     """Delete a model and its provider (if no other models use it) from config."""
     import tomlkit
+
+    _ensure_sensitive_apis_allowed(http_request)
 
     config = load_config()
 
@@ -438,7 +560,11 @@ async def delete_model(
             m.provider == provider_name and k != model_name
             for k, m in config.models.items()
         )
-        if not other_models_using_provider and "providers" in doc and provider_name in doc["providers"]:
+        if (
+            not other_models_using_provider
+            and "providers" in doc
+            and provider_name in doc["providers"]
+        ):
             del doc["providers"][provider_name]
 
     content = tomlkit.dumps(doc)
@@ -466,5 +592,5 @@ async def delete_model(
 
     return DeleteModelResponse(
         config=_build_global_config(),
-        restarted_sessions=restarted_session_ids,
+        restarted_session_ids=restarted_session_ids,
     )

@@ -24,9 +24,19 @@ class PrecheckOptions:
     require_postgres: bool = True
     require_core_tools: bool = True
     require_burp_mcp: bool = False
+    # OPEN-6: 扫描工具（nmap 等）单独控制，默认不强制；仅 `kxns scan` 等场景开启
+    require_scan_tools: bool = False
 
 
-CORE_TOOLS = ("python3", "bash", "nmap", "curl", "rg")
+# OPEN-6: 拆分核心工具与扫描工具
+# - REQUIRED_CORE_TOOLS: chat / 通用功能必需（无 nmap）
+# - SCAN_TOOLS: 仅扫描功能必需；缺失时仅在 require_scan_tools=True 才 blocking
+REQUIRED_CORE_TOOLS = ("python3", "bash", "curl", "rg")
+SCAN_TOOLS = ("nmap",)
+
+# 向后兼容：保留 CORE_TOOLS 名字（= REQUIRED_CORE_TOOLS + SCAN_TOOLS），
+# 供 doctor / 文档等旧引用使用，但 run_precheck 默认不再按此集合 blocking。
+CORE_TOOLS = REQUIRED_CORE_TOOLS + SCAN_TOOLS
 
 
 async def run_precheck(
@@ -37,7 +47,7 @@ async def run_precheck(
     """Full diagnostics with blocking failure classification for scans."""
     config = config or load_config()
     options = options or PrecheckOptions(
-        require_postgres=config.blackboard.require_postgres if config.blackboard else True,
+        require_postgres=config.blackboard.require_postgres if config.blackboard else False,
     )
 
     results = await run_full_diagnostics(config)
@@ -47,11 +57,17 @@ async def run_precheck(
         if r.ok:
             continue
         name = r.name
+        tool_name = name.removeprefix("tool:") if name.startswith("tool:") else None
         if (
             (
                 options.require_core_tools
-                and name.startswith("tool:")
-                and name.removeprefix("tool:") in CORE_TOOLS
+                and tool_name is not None
+                and tool_name in REQUIRED_CORE_TOOLS
+            )
+            or (
+                options.require_scan_tools
+                and tool_name is not None
+                and tool_name in SCAN_TOOLS
             )
             or (options.require_postgres and name == "blackboard")
             or (options.require_llm and name.startswith("llm"))

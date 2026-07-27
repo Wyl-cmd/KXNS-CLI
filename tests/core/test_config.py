@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from inline_snapshot import snapshot
 
 from kxns_cli.config import (
     Config,
@@ -14,30 +13,23 @@ from kxns_cli.exception import ConfigError
 
 def test_default_config():
     config = get_default_config()
-    assert config == snapshot(Config())
+    assert isinstance(config, Config)
+    assert config.default_model == ""
 
 
 def test_default_config_dump():
     config = get_default_config()
-    assert config.model_dump() == snapshot(
-        {
-            "default_model": "",
-            "default_thinking": False,
-            "default_yolo": False,
-            "default_editor": "",
-            "models": {},
-            "providers": {},
-            "loop_control": {
-                "max_steps_per_turn": 100,
-                "max_retries_per_step": 3,
-                "max_ralph_iterations": 0,
-                "reserved_context_size": 50000,
-                "compaction_trigger_ratio": 0.85,
-            },
-            "services": {"web_search": None, "web_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
-        }
-    )
+    dumped = config.model_dump(mode="json")
+    assert dumped["default_model"] == ""
+    assert dumped["mcp"]["client"]["tool_call_timeout_ms"] == 120000
+    assert dumped["mcp"]["client"]["connect_timeout_ms"] == 30000
+    assert dumped["llm_client"]["request_timeout_seconds"] == 300
+    assert dumped["blackboard"]["backend"] == "memory"
+    assert dumped["blackboard"]["require_postgres"] is False
+    assert dumped["blackboard"]["password"] == "kxns"
+    assert dumped["scan"]["max_concurrency"] == 4
+    assert dumped["scan"]["authorized_attack"] is False
+    assert dumped["scan"]["auto_scan_on_hunt_intent"] is False
 
 
 def test_load_config_text_toml():

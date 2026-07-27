@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/open-in", tags=["open-in"])
+
+# OPEN-11: LAN 模式下拒绝访问的敏感家目录子路径（与 sessions.py 的 SENSITIVE_HOME_PATHS 对齐）
+_SENSITIVE_HOME_PATHS = frozenset({".ssh", ".aws", ".gnupg", ".config", ".kube"})
 
 
 class OpenInRequest(BaseModel):
@@ -27,6 +31,33 @@ class OpenInResponse(BaseModel):
 
     ok: bool
     detail: str | None = None
+
+
+def _escape_applescript_string(s: str) -> str:
+    """转义 AppleScript 字符串中的特殊字符（OPEN-10）。
+
+    AppleScript 字符串用双引号包裹，其中的 `\\` 和 `"` 需转义，
+    防止路径名含这些字符时破坏脚本结构、执行任意 AppleScript。
+    """
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _is_sensitive_path(path: Path) -> bool:
+    """检查路径是否指向敏感家目录子路径（OPEN-11）。
+
+    与 sessions.py 的 `_is_path_in_sensitive_location` 逻辑对齐，
+    用于 LAN 模式下拒绝访问 `~/.ssh`、`~/.aws` 等敏感目录。
+    """
+    try:
+        home = Path.home()
+        if path.is_relative_to(home):
+            rel_to_home = path.relative_to(home)
+            first_part = rel_to_home.parts[0] if rel_to_home.parts else ""
+            if first_part in _SENSITIVE_HOME_PATHS:
+                return True
+    except (ValueError, RuntimeError):
+        pass
+    return False
 
 
 def _resolve_path(path: str) -> Path:
@@ -69,17 +100,21 @@ def _open_app(app_name: str, path: Path, fallback: str | None = None) -> None:
 
 
 def _open_terminal(path: Path) -> None:
-    script = f'tell application "Terminal" to do script "cd " & quoted form of "{path}"'
+    # OPEN-10: 转义 path 中的 AppleScript 特殊字符，防止命令注入
+    safe_path = _escape_applescript_string(str(path))
+    script = f'tell application "Terminal" to do script "cd " & quoted form of "{safe_path}"'
     _run_command(["osascript", "-e", script])
 
 
 def _open_iterm(path: Path) -> None:
+    # OPEN-10: 转义 path 中的 AppleScript 特殊字符，防止命令注入
+    safe_path = _escape_applescript_string(str(path))
     script = "\n".join(
         [
             'tell application "iTerm"',
             "  create window with default profile",
             "  tell current session of current window",
-            f'    write text "cd " & quoted form of "{path}"',
+            f'    write text "cd " & quoted form of "{safe_path}"',
             "  end tell",
             "end tell",
         ]
@@ -92,8 +127,18 @@ def _open_iterm(path: Path) -> None:
 
 
 @router.post("", summary="Open a path in a local application")
-async def open_in(request: OpenInRequest) -> OpenInResponse:
+async def open_in(request: OpenInRequest, http_request: Request) -> OpenInResponse:
     path = _resolve_path(request.path)
+
+    # OPEN-11: LAN 模式下拒绝访问敏感路径（~/.ssh、~/.aws 等）
+    # restrict_sensitive_apis=True 时此 router 不挂载（app.py:225-226），无需校验
+    lan_only = getattr(http_request.app.state, "lan_only", False)
+    if lan_only and _is_sensitive_path(path):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to sensitive paths is not allowed in LAN-only mode.",
+        )
+
     is_file = path.is_file()
 
     try:
@@ -110,7 +155,8 @@ async def open_in(request: OpenInRequest) -> OpenInResponse:
                     _run_command(["code", str(path)])
                 case "terminal":
                     directory = path.parent if is_file else path
-                    _run_command(["cmd", "/c", "start", "cmd", "/k", f"cd /d {directory}"])
+                    # OPEN-10: 用引号包裹 directory，防止 & 等字符执行额外 cmd
+                    _run_command(["cmd", "/c", "start", "cmd", "/k", f'cd /d "{directory}"'])
                 case _:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,7 +196,8 @@ async def open_in(request: OpenInRequest) -> OpenInResponse:
                     _run_command(["code", str(path)])
                 case "terminal":
                     directory = path.parent if is_file else path
-                    _run_command(["xdg-terminal-emulator", f"cd {directory}"])
+                    # OPEN-10: 用 shlex.quote 转义 directory，防止 ; 等字符执行额外 shell
+                    _run_command(["xdg-terminal-emulator", f"cd {shlex.quote(str(directory))}"])
                 case _:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,

@@ -48,9 +48,24 @@ class ScanManager:
     ) -> ScanRunResult:
         """Run scan pipeline for the given URL."""
         if self._config.scan.precheck_enabled and not skip_precheck:
-            from kxns_cli.infra.precheck import format_precheck_failure, run_precheck
+            from kxns_cli.infra.precheck import (
+                PrecheckOptions,
+                format_precheck_failure,
+                run_precheck,
+            )
 
-            pre = await run_precheck(self._config)
+            # OPEN-6: 扫描场景强制 nmap 等扫描工具；普通 chat 不受影响
+            pre = await run_precheck(
+                self._config,
+                options=PrecheckOptions(
+                    require_postgres=(
+                        self._config.blackboard.require_postgres
+                        if self._config.blackboard
+                        else False
+                    ),
+                    require_scan_tools=True,
+                ),
+            )
             if not pre.ok:
                 msg = format_precheck_failure(pre)
                 raise RuntimeError(msg)
@@ -61,7 +76,7 @@ class ScanManager:
 
         blackboard = self._blackboard or await create_blackboard_store(
             self._config,
-            strict=self._config.blackboard.require_postgres if self._config.blackboard else True,
+            strict=self._config.blackboard.require_postgres if self._config.blackboard else False,
         )
         own_bb = self._blackboard is None
 

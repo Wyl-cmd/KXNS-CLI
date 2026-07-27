@@ -12,6 +12,7 @@ from kaos.path import KaosPath
 from pydantic import SecretStr
 
 from kxns_cli.agentspec import DEFAULT_AGENT_FILE
+from kxns_cli.auth.oauth import OAuthManager
 from kxns_cli.cli import InputFormat, OutputFormat
 from kxns_cli.config import Config, LLMModel, LLMProvider, load_config
 from kxns_cli.llm import augment_provider_with_env_vars, create_llm, model_display_name
@@ -74,39 +75,25 @@ class KxnsCLI:
 
         model: LLMModel | None = None
         provider: LLMProvider | None = None
+        oauth = OAuthManager(config)
 
         if not model_name and config.default_model:
-            if config.default_model in config.models:
-                model = config.models[config.default_model]
-                provider = config.providers.get(model.provider)
-            else:
-                model = LLMModel(
-                    provider="custom",
-                    model=config.default_model,
-                    max_context_size=128_000,
-                )
-                if "custom" in config.providers:
-                    provider = config.providers["custom"]
-                else:
-                    first_provider = next(iter(config.providers.values()), None)
-                    if first_provider:
-                        provider = first_provider
-        if model_name:
-            if model_name in config.models:
-                model = config.models[model_name]
-                provider = config.providers.get(model.provider)
-            else:
-                model = LLMModel(
-                    provider="custom",
-                    model=model_name,
-                    max_context_size=128_000,
-                )
-                if "custom" in config.providers:
-                    provider = config.providers["custom"]
-                else:
-                    first_provider = next(iter(config.providers.values()), None)
-                    if first_provider:
-                        provider = first_provider
+            # 严格校验保证 default_model ∈ models
+            model = config.models[config.default_model]
+            provider = config.providers[model.provider]
+        if model_name and model_name in config.models:
+            model = config.models[model_name]
+            provider = config.providers[model.provider]
+        elif model_name:
+            # CLI --model 指定了配置中不存在的名字：仅作显式覆盖，不伪装已配置
+            model = LLMModel(
+                provider="custom" if "custom" in config.providers else "",
+                model=model_name,
+                max_context_size=128_000,
+            )
+            provider = config.providers.get("custom") or next(
+                iter(config.providers.values()), None
+            )
 
         if not model:
             model = LLMModel(provider="", model="", max_context_size=128_000)
@@ -128,7 +115,7 @@ class KxnsCLI:
             model,
             thinking=thinking,
             session_id=session.id,
-            oauth=None,
+            oauth=oauth,
             request_timeout=(
                 llm_request_timeout
                 if llm_request_timeout is not None
@@ -147,7 +134,7 @@ class KxnsCLI:
                 model=model,
             )
 
-        runtime = await Runtime.create(config, None, llm, session, yolo, skills_dir)
+        runtime = await Runtime.create(config, oauth, llm, session, yolo, skills_dir)
         if agent_file is None:
             agent_file = DEFAULT_AGENT_FILE
         agent = await load_agent(agent_file, runtime, mcp_configs=mcp_configs or [])

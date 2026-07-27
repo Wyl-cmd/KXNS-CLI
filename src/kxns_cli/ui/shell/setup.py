@@ -67,6 +67,13 @@ class _SetupResult(NamedTuple):
 
 
 async def _setup_platform(platform: Platform) -> _SetupResult | None:
+    # Custom / 空 base_url：先填 OpenAI 兼容地址
+    if not platform.base_url:
+        base_url = await _prompt_text("Enter API base URL (OpenAI compatible)")
+        if not base_url:
+            return None
+        platform = platform._replace(base_url=base_url.rstrip("/"))
+
     # enter the API key
     api_key = await _prompt_text("Enter your API key", is_password=True)
     if not api_key:
@@ -123,11 +130,16 @@ async def _setup_platform(platform: Platform) -> _SetupResult | None:
 
 
 def _apply_setup_result(result: _SetupResult) -> None:
+    from typing import cast
+
+    from kxns_cli.llm import ProviderType
+
     config = load_config()
     provider_key = managed_provider_key(result.platform.id)
     model_key = managed_model_key(result.platform.id, result.selected_model.id)
+    provider_type = cast(ProviderType, result.platform.provider_type or "openai_legacy")
     config.providers[provider_key] = LLMProvider(
-        type="openai_legacy",
+        type=provider_type,
         base_url=result.platform.base_url,
         api_key=result.api_key,
     )
@@ -139,7 +151,7 @@ def _apply_setup_result(result: _SetupResult) -> None:
         config.models[managed_model_key(result.platform.id, model_info.id)] = LLMModel(
             provider=provider_key,
             model=model_info.id,
-            max_context_size=model_info.context_length,
+            max_context_size=model_info.context_length or 128000,
             capabilities=capabilities,
         )
     config.default_model = model_key
