@@ -1,6 +1,6 @@
 # KXNS Hunter CLI
 
-[![Version](https://img.shields.io/badge/version-1.0.0-green)](https://github.com/Wyl-cmd/kxns-cli)
+[![Version](https://img.shields.io/badge/version-1.0.1-green)](https://github.com/Wyl-cmd/kxns-cli)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-ASL--2.0-yellow)](LICENSE)
 
@@ -12,8 +12,29 @@
 - 🔧 **Shell 集成**：内置 Shell 命令模式，使用 Ctrl-X 切换
 - 🌐 **Web 界面**：内置 Web 用户界面，提供更好的交互体验
 - 🔌 **MCP 支持**：支持模型上下文协议（Model Context Protocol），可扩展工具集成
-- 📦 **便捷部署**：提供 Windows 和 Linux 的简易安装脚本
+- 📦 **便捷部署**：提供 Linux 二进制和 deb 安装包，开箱即用
 - 🔄 **跨平台构建**：支持 Nix Flakes 和 uv 锁定，确保环境一致性
+
+## 平台支持
+
+| 平台 | 支持程度 | 说明 |
+|------|----------|------|
+| **Linux（推荐）** | ✅ 完整支持 | 所有功能均可用，**Kali Linux** 为最佳运行环境 |
+| **macOS** | ⚠️ 部分支持 | 基本对话和 Web 界面可用，扫描相关工具受限 |
+| **Windows** | ⚠️ 受限支持 | 仅基本对话和配置功能可用，下方列出的功能不可用 |
+
+### Windows 下不可用或受限的功能
+
+以下功能**依赖 Linux/Unix 环境**，在 Windows 下无法正常工作：
+
+- 🔍 **扫描编排**（`kxns scan`）：依赖 nmap、masscan 等 Kali Linux 专用工具
+- 🩺 **环境检查**（`kxns doctor`）：依赖 Linux 工具链
+- 🖥️ **Shell 模式**：Windows 下使用 PowerShell，部分 Unix 命令不可用
+- 🔧 **Wire 协议**（`--wire`）：Linux stdio 流实现，Windows 下可能异常
+- 📡 **渗透测试技能包**：145+ 技能均基于 Linux/Kali 工具链
+- 🗄️ **PostgreSQL 黑板**：扫描编排的数据存储依赖 Unix 环境
+
+> 💡 **建议**：如需在 Windows 上使用，推荐通过 **WSL 2（Windows Subsystem for Linux）** 运行 Kali Linux 环境，以获得完整功能体验。
 
 ## 安装
 
@@ -24,15 +45,33 @@
 
 ### 快速安装
 
+**Linux/macOS（推荐）：**
+```bash
+chmod +x install.sh
+./install.sh
+```
+
 **Windows（PowerShell）：**
 ```powershell
 .\install.ps1
 ```
 
-**Linux/macOS：**
+> ⚠️ **Windows 用户注意**：Windows 下仅支持基本对话和 API 配置功能。扫描、渗透测试等功能需要 Linux 环境，建议使用 WSL 2 + Kali Linux。详见上方[平台支持](#平台支持)。
+
+### 使用预编译二进制（Linux）
+
+从 [GitHub Release v1.0.1](https://github.com/Wyl-cmd/kxns-cli/releases/tag/v1.0.1) 下载对应产物：
+
 ```bash
-chmod +x install.sh
-./install.sh
+# 下载二进制文件（免安装，直接运行）
+wget https://github.com/Wyl-cmd/kxns-cli/releases/download/v1.0.1/kxns-1.0.1-linux-amd64
+chmod +x kxns-1.0.1-linux-amd64
+./kxns-1.0.1-linux-amd64 --version
+
+# 或下载 deb 包安装（Debian/Ubuntu/Kali）
+wget https://github.com/Wyl-cmd/kxns-cli/releases/download/v1.0.1/kxns_1.0.1_amd64.deb
+sudo dpkg -i kxns_1.0.1_amd64.deb
+kxns --version
 ```
 
 ### 手动安装
