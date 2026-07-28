@@ -11,25 +11,35 @@ Only write entries that are worth mentioning to users.
 
 ## Unreleased
 
-## 1.2.0 (2026-07-27)
+## 1.0.1 (2026-07-28)
 
-- Web: Fix real-time message rendering — Wire worker stdout writer incorrectly passed `(transport, protocol)` tuple as transport on Linux, so live Wire events never reached the parent process/WebSocket; messages only appeared after switching sessions (history replay). `_stdio_streams` now unpacks write pipe correctly.
-- Packaging: Bump release version for binary and deb builds
+First stable release of KXNS Hunter CLI. Includes all security hardening, Web UI fixes, and authentication fixes from the preview (1.0.0) cycle.
 
-## 1.1.0 (2026-07-26)
+### Security
+- Fix Web API key plaintext exposure — API key is now masked in GET /api/config responses
+- Fix open_in API command injection — shell metacharacters in paths are now properly escaped (shlex.quote on Linux, AppleScript escaping on macOS, quote wrapping on Windows)
+- Fix open_in API path traversal in LAN-only mode — sensitive paths (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/.kube) are now rejected with 403
+- Fix CORS wildcard origin with credentials — when `allowed_origins` contains `*`, `allow_credentials` is now forced to `false` to comply with browser spec
 
-- Security: Fix Web API key plaintext exposure — API key is now masked in GET /api/config responses
-- Security: Fix open_in API command injection — shell metacharacters in paths are now properly escaped (shlex.quote on Linux, AppleScript escaping on macOS, quote wrapping on Windows)
-- Security: Fix open_in API path traversal in LAN-only mode — sensitive paths (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/.kube) are now rejected with 403
-- Security: Fix CORS wildcard origin with credentials — when `allowed_origins` contains `*`, `allow_credentials` is now forced to `false` to comply with browser spec
-- Web: Fix error-state busy stuck issue — in-flight prompt IDs are now cleared on worker process exit, allowing new prompts after error recovery
-- Web: Fix replay_history silently swallowing exceptions — removed bare `except Exception: pass` so history replay errors are logged and propagated
-- Auth: Fix OAuth stub not being async generator — `login_kxns_code`/`logout_kxns_code` now properly yield `OAuthEvent` events
-- Auth: Fix `parse_managed_provider_key` return type — now returns `str | None` instead of incorrect `tuple[str, str] | None`
-- Auth: Fix managed provider platform name detection — `get_platform_name_for_provider` now handles managed prefix correctly
-- Config: Add safe defaults for managed providers — `auto_scan_on_hunt_intent` defaults to `false` when unset
-- Infra: Split precheck tools into required core tools and optional scan tools — `require_scan_tools` option controls scan tool availability
-- Core: Pass session ID as `user_id` metadata to Anthropic API
+### Web
+- Fix real-time message rendering — Wire worker stdout writer incorrectly passed `(transport, protocol)` tuple as transport on Linux, so live Wire events never reached the parent process/WebSocket; messages only appeared after switching sessions (history replay). `_stdio_streams` now unpacks write pipe correctly.
+- Fix error-state busy stuck issue — in-flight prompt IDs are now cleared on worker process exit, allowing new prompts after error recovery
+- Fix replay_history silently swallowing exceptions — removed bare `except Exception: pass` so history replay errors are logged and propagated
+
+### Auth
+- Fix OAuth stub not being async generator — `login_kxns_code`/`logout_kxns_code` now properly yield `OAuthEvent` events
+- Fix `parse_managed_provider_key` return type — now returns `str | None` instead of incorrect `tuple[str, str] | None`
+- Fix managed provider platform name detection — `get_platform_name_for_provider` now handles managed prefix correctly
+
+### Config & Infra
+- Add safe defaults for managed providers — `auto_scan_on_hunt_intent` defaults to `false` when unset
+- Split precheck tools into required core tools and optional scan tools — `require_scan_tools` option controls scan tool availability
+
+### Core
+- Pass session ID as `user_id` metadata to Anthropic API
+
+### Packaging
+- Bump release version for binary and deb builds
 
 ## 1.17.0 (2026-03-03)
 

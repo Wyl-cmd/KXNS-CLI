@@ -1,6 +1,6 @@
 [project]
 name = "kxns-cli"
-version = "1.2.0"
+version = "1.0.1"
 description = "Kxns Hunter CLI - A penetration testing focused AI agent CLI tool."
 readme = "README.md"
 requires-python = ">=3.12"
