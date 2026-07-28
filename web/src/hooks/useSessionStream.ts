@@ -1957,11 +1957,13 @@ export function useSessionStream(
           console.log(
             "[SessionStream] History loaded, waiting for environment...",
           );
-          // NOTE: Do NOT set isReplayingRef.current = false here.
-          // The server still needs to flush buffered live messages (end_replay)
-          // and start the worker. Those buffered messages may contain events
-          // like CompactionEnd that should still be treated as replay.
-          // isReplayingRef will be set to false when session_status arrives.
+          // 历史回放已经结束。后端接下来会 flush 缓冲区里的实时消息
+          // (end_replay)，然后启动 worker 并发送 session_status。如果此时
+          // 仍保持 isReplayingRef=true，这些实时消息会被当作回放处理，导致
+          // 用户/AI 消息被静默缓冲，只有切会话或收到 session_status 后才出现。
+          // 因此在这里立即退出 replay 模式。
+          isReplayingRef.current = false;
+          setIsReplayingHistory(false);
 
           // Keep status as "submitted" - input stays disabled until session_status
           setStatus((current) => (current === "ready" ? current : "submitted"));

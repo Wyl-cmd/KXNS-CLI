@@ -120,14 +120,14 @@ async def _stdio_streams(limit: int = STDIO_BUFFER_LIMIT) -> tuple[asyncio.Strea
         writer = _ThreadedStdioWriter(loop)
         return reader, writer
     else:
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-        writer = asyncio.StreamWriter(
-            transport=await loop.connect_write_pipe(asyncio.streams.FlowControlMixin, sys.stdout),
-            protocol=protocol,
-            reader=reader,
-            loop=loop,
+        # read / write 必须使用各自的 protocol；connect_write_pipe 返回 (transport, protocol)
+        read_protocol = asyncio.StreamReaderProtocol(reader)
+        await loop.connect_read_pipe(lambda: read_protocol, sys.stdin)
+        write_transport, write_protocol = await loop.connect_write_pipe(
+            asyncio.streams.FlowControlMixin,
+            sys.stdout,
         )
+        writer = asyncio.StreamWriter(write_transport, write_protocol, None, loop)
         return reader, writer
 
 
